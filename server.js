@@ -21983,7 +21983,9 @@ function validateTournamentSocialUrl(platform, rawUrl) {
     const data = await fs.promises.readFile(filePath);
     const ext = path.extname(filePath);
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': contentType });
+    const headers = { 'Content-Type': contentType };
+    if (ext === '.html') headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+    res.writeHead(200, headers);
     res.end(data);
   } catch (err) {
     res.writeHead(404, { 'Content-Type': 'text/plain' });

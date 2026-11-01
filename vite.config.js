@@ -38,12 +38,19 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('react') || id.includes('react-dom') || id.includes('framer-motion') || id.includes('react-router')) {
-              return 'vendor'
-            }
+          const source = id.replaceAll('\\', '/')
+          if (source.includes('/node_modules/')) {
+            if (source.includes('/react/') || source.includes('/react-dom/') || source.includes('/framer-motion/') || source.includes('/react-router')) return 'vendor'
             return 'dependencies'
           }
+          if ([
+            '/src/UserContext.jsx',
+            '/src/ThemeContext.jsx',
+            '/src/config/email.js',
+            '/src/utils/defaults.js',
+            '/src/components/Header.jsx',
+            '/src/components/LoadingScreen.jsx'
+          ].some(modulePath => source.endsWith(modulePath))) return 'auth-shared'
         }
       }
     }
