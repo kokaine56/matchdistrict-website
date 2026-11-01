@@ -148,6 +148,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
   const [loginOtpDigits, setLoginOtpDigits] = useState(Array(OTP_DIGITS_COUNT).fill(''))
   const [loginOtpCooldown, setLoginOtpCooldown] = useState(0)
   const loginOtpRefs = useRef([])
+  const [isAdminLogin, setIsAdminLogin] = useState(false)
 
   useEffect(() => {
     const identifier = loginForm.email.trim()
@@ -177,7 +178,6 @@ function Auth({ onNavigate, initialMode = 'login' }) {
   }, [loginOtpCooldown])
 
   // Admin TOTP login state
-  const [isAdminLogin, setIsAdminLogin] = useState(false)
   const [adminOtp, setAdminOtp] = useState('')
   const [adminTotpNotConfigured, setAdminTotpNotConfigured] = useState(false)
   const adminTotpCheckRef = useRef(null)
