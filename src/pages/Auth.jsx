@@ -338,7 +338,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', ''])
   const [otpSent, setOtpSent] = useState(false)
 
-  const triggerToast = (msg) => {
+  function triggerToast(msg) {
     setToastMessage(msg)
     setShowToast(true)
     setTimeout(() => setShowToast(false), 4000)
@@ -1256,18 +1256,18 @@ function Auth({ onNavigate, initialMode = 'login' }) {
 
   // --- Account Switcher Helpers ---
 
-  const getRememberedAccounts = () => {
+  function getRememberedAccounts() {
     try {
       const raw = localStorage.getItem(REMEMBERED_KEY)
       return raw ? JSON.parse(raw) : []
     } catch { return [] }
   }
 
-  const saveRememberedAccounts = (accounts) => {
+  function saveRememberedAccounts(accounts) {
     try { localStorage.setItem(REMEMBERED_KEY, JSON.stringify(accounts)) } catch {}
   }
 
-  const addRememberedAccount = (user, provider) => {
+  function addRememberedAccount(user, provider) {
     const accounts = getRememberedAccounts().filter(a => a.id !== user.id)
     const avatarUrl = user.avatar || user.orgImage || user.avatar_url || user.profile_image || ''
     accounts.unshift({
