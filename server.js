@@ -568,8 +568,8 @@ function cleanDiscordEnv(val) {
 }
 
 // Custom User-Agent and Base URL for Discord API requests
-const DISCORD_API_USER_AGENT = process.env.DISCORD_USER_AGENT || 'MatchDistrictBot (https://matchdistrict.in, 1.0.0)';
-const DISCORD_API_BASE_URL = (process.env.DISCORD_API_BASE_URL || 'https://discord.com/api').replace(/\/+$/, '');
+const DISCORD_API_USER_AGENT = process.env.DISCORD_USER_AGENT || 'DiscordBot (https://matchdistrict.in, 1.0.0)';
+const DISCORD_API_BASE_URL = (process.env.DISCORD_API_BASE_URL || 'https://discord.com/api/v10').replace(/\/+$/, '');
 
 // Global tracker for Discord API rate limits / Cloudflare IP blocks (Error 1015)
 let discordRateLimitCooldown = {
@@ -579,6 +579,21 @@ let discordRateLimitCooldown = {
   lastEncounteredAt: 0,
   endpoint: null,
 };
+
+function clearDiscordRateLimits() {
+  discordRateLimitCooldown = {
+    activeUntil: 0,
+    retryAfterSeconds: 0,
+    blockType: 'none',
+    lastEncounteredAt: 0,
+    endpoint: null,
+  };
+  for (const key of rateLimitMap.keys()) {
+    if (key.startsWith('discord_')) {
+      rateLimitMap.delete(key);
+    }
+  }
+}
 
 function recordDiscordRateLimit(endpoint, retryAfterSec, isHtml) {
   let retrySec = parseInt(retryAfterSec, 10);
@@ -3705,6 +3720,7 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
 
     const clientIp = getClientIp(req);
     const authUserId = authUser ? (authUser.id || authUser.uid) : null;
+    console.log(`[DISCORD AUTH START] Flow: ${isLoginFlow ? 'login' : 'link'} | IP: ${clientIp} | User: ${authUserId || 'guest'} | RedirectParam: ${parsedUrl.searchParams.get('redirect') || 'none'}`);
 
     // For account linking, check if global Discord API cooldown is active.
     // For login flow (/api/auth/discord/login), do not preemptively block the user from redirecting to discord.com.
@@ -3823,15 +3839,10 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
       return `/profile?discord=error&code=${encodeURIComponent(code)}${qs}`;
     };
 
-    const activeGlobalCooldown = getActiveDiscordRateLimitCooldown();
-    if (activeGlobalCooldown.isRateLimited) {
-      console.warn(`[DISCORD AUTH] Callback blocked by active Discord rate limit cooldown (${activeGlobalCooldown.remainingSeconds}s remaining). Block type: ${activeGlobalCooldown.blockType}`);
-      res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation('rate_limited', activeGlobalCooldown.remainingSeconds) });
-      res.end();
-      return;
-    }
+    console.log(`[DISCORD AUTH CALLBACK] IP: ${clientIp} | Query: ${parsedUrl.search}`);
 
-    const cbIpLimit = checkRateLimit('discord_callback_ip:' + clientIp, 60, 10 * 60 * 1000);
+    // Only apply IP abuse limit with generous threshold so normal OAuth redirects are not blocked
+    const cbIpLimit = checkRateLimit('discord_callback_ip:' + clientIp, 120, 10 * 60 * 1000);
     if (!cbIpLimit.allowed) {
       console.error(`[DISCORD CONNECT ERROR] Step: callback_ip_rate_limit | Code: rate_limited | IP: ${clientIp}`);
       res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation('rate_limited', cbIpLimit.retryAfter) });
@@ -4010,6 +4021,7 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
       const tokenAbort = new AbortController();
       const tokenTimer = setTimeout(() => tokenAbort.abort(), 10000);
       let tokenRes;
+      console.log(`[DISCORD TOKEN EXCHANGE] POST ${DISCORD_API_BASE_URL}/oauth2/token | redirect_uri: ${effectiveRedirectUri} | client_id: ${discordClientId}`);
       try {
         tokenRes = await fetch(`${DISCORD_API_BASE_URL}/oauth2/token`, {
           method: 'POST',
@@ -4035,9 +4047,10 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
       clearTimeout(tokenTimer);
 
       const durationMs = Date.now() - exchangeStartTime;
+      const rawBody = await tokenRes.text().catch(() => '');
+      console.log(`[DISCORD TOKEN EXCHANGE RESPONSE] Status: ${tokenRes.status} | Retry-After: ${tokenRes.headers.get('retry-after') || 'none'} | Reset-After: ${tokenRes.headers.get('x-ratelimit-reset-after') || 'none'} | Body: ${rawBody.slice(0, 500)}`);
 
       if (!tokenRes.ok) {
-        const rawBody = await tokenRes.text().catch(() => '');
         const analysis = analyzeDiscordResponse(tokenRes, rawBody, 'token_exchange');
 
         let clientRedirectCode = 'token_exchange_failed';
@@ -4046,15 +4059,16 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           clientRedirectCode = 'invalid_grant';
         } else if (analysis.parsedJson?.error === 'invalid_client') {
           clientRedirectCode = 'invalid_client';
-        } else if (tokenRes.status === 403 || tokenRes.status === 429) {
-          clientRedirectCode = tokenRes.status === 429 ? 'rate_limited' : 'blocked';
+        } else if (tokenRes.status === 429) {
+          clientRedirectCode = 'rate_limited';
           const headerRetry = analysis.retryAfter || analysis.parsedJson?.retry_after;
-          retryAfterVal = headerRetry ? (parseInt(headerRetry, 10) || 60) : 60;
-          if (retryAfterVal > 10000) {
-            retryAfterVal = Math.ceil(retryAfterVal / 1000);
-          }
-          retryAfterVal = Math.min(900, Math.max(1, retryAfterVal));
+          let parsedVal = headerRetry ? parseFloat(headerRetry) : 5;
+          if (isNaN(parsedVal) || parsedVal <= 0) parsedVal = 5;
+          if (parsedVal > 10000) parsedVal = parsedVal / 1000;
+          retryAfterVal = Math.min(900, Math.ceil(parsedVal));
           recordDiscordRateLimit('oauth2/token', retryAfterVal, analysis.isHtml);
+        } else if (tokenRes.status === 403) {
+          clientRedirectCode = 'blocked';
         }
 
         res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation(clientRedirectCode, retryAfterVal) });
@@ -4093,8 +4107,10 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
       }
       clearTimeout(userTimer);
 
+      const rawUserBody = await userRes.text().catch(() => '');
+      console.log(`[DISCORD USER FETCH RESPONSE] Status: ${userRes.status} | Retry-After: ${userRes.headers.get('retry-after') || 'none'} | Reset-After: ${userRes.headers.get('x-ratelimit-reset-after') || 'none'} | Body: ${rawUserBody.slice(0, 500)}`);
+
       if (!userRes.ok) {
-        const rawUserBody = await userRes.text().catch(() => '');
         const analysis = analyzeDiscordResponse(userRes, rawUserBody, 'profile_fetch');
 
         let clientRedirectCode = 'profile_fetch_failed';
@@ -4102,11 +4118,10 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
         if (userRes.status === 429) {
           clientRedirectCode = 'rate_limited';
           const headerRetry = analysis.retryAfter || analysis.parsedJson?.retry_after;
-          retryAfterVal = headerRetry ? (parseInt(headerRetry, 10) || 60) : 60;
-          if (retryAfterVal > 10000) {
-            retryAfterVal = Math.ceil(retryAfterVal / 1000);
-          }
-          retryAfterVal = Math.min(900, Math.max(1, retryAfterVal));
+          let parsedVal = headerRetry ? parseFloat(headerRetry) : 5;
+          if (isNaN(parsedVal) || parsedVal <= 0) parsedVal = 5;
+          if (parsedVal > 10000) parsedVal = parsedVal / 1000;
+          retryAfterVal = Math.min(900, Math.ceil(parsedVal));
           recordDiscordRateLimit('users/@me', retryAfterVal, analysis.isHtml);
         } else if (userRes.status === 403) {
           clientRedirectCode = 'blocked';
@@ -22280,7 +22295,8 @@ function startMonitoringWorker() {
   startMonitoringWorker();
   accountSecurity.startNotificationCleanup();
   accountSecurity.startAbuseCleanup();
-  server.listen(PORT, '0.0.0.0', () => {
+  clearDiscordRateLimits();
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`\n🚀 [MATCH DISTRICT PRODUCTION SERVER] Running on http://localhost:${PORT}`);
     console.log(`🌐 Network: http://127.0.0.1:${PORT} (listening on all interfaces 0.0.0.0)`);
     console.log(`📦 Serving static frontend from ./dist`);

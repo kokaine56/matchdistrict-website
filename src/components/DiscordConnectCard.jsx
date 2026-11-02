@@ -103,14 +103,18 @@ export default function DiscordConnectCard({ currentUser, providerIdentity, onUs
         },
         rate_limited: {
           msg: (() => {
-            let retrySec = Number(params.get('retry_after')) || 60;
+            let retrySec = Number(params.get('retry_after')) || 5;
             if (retrySec > 10000) retrySec = Math.ceil(retrySec / 1000);
-            const minutes = Math.min(15, Math.max(1, Math.ceil(retrySec / 60)));
+            retrySec = Math.min(900, Math.max(1, Math.round(retrySec)));
             try {
-              sessionStorage.setItem('discord_retry_until', String(Date.now() + (minutes * 60 * 1000)));
+              sessionStorage.setItem('discord_retry_until', String(Date.now() + (retrySec * 1000)));
             } catch {
               /* ignore storage error */
             }
+            if (retrySec < 60) {
+              return `Discord is temporarily rate-limited. Please retry in ${retrySec} second${retrySec === 1 ? '' : 's'}.`;
+            }
+            const minutes = Math.ceil(retrySec / 60);
             return `Discord is temporarily rate-limited. Please retry in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
           })(),
           ref: 'rate_limited',

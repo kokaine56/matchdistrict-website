@@ -386,15 +386,20 @@ function Profile({ onNavigate, selectedUserProfile }) {
       } else if (discordParam === 'error') {
         setShowToast(true);
         if (errCode === 'rate_limited') {
-          let retrySec = Number(searchParams.get('retry_after')) || 60;
+          let retrySec = Number(searchParams.get('retry_after')) || 5;
           if (retrySec > 10000) retrySec = Math.ceil(retrySec / 1000);
-          const minutes = Math.min(15, Math.max(1, Math.ceil(retrySec / 60)));
+          retrySec = Math.min(900, Math.max(1, Math.round(retrySec)));
           try {
-            sessionStorage.setItem('discord_retry_until', String(Date.now() + (minutes * 60 * 1000)));
+            sessionStorage.setItem('discord_retry_until', String(Date.now() + (retrySec * 1000)));
           } catch {
             /* ignore storage error */
           }
-          setToastMessage(`Discord is temporarily rate-limited. Please try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`);
+          if (retrySec < 60) {
+            setToastMessage(`Discord is temporarily rate-limited. Please try again in ${retrySec} second${retrySec === 1 ? '' : 's'}.`);
+          } else {
+            const minutes = Math.ceil(retrySec / 60);
+            setToastMessage(`Discord is temporarily rate-limited. Please try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`);
+          }
         } else {
           const friendlyDiscordErrors = {
             cancelled: 'Discord authorization was cancelled.',
