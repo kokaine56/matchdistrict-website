@@ -41,6 +41,7 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/workers ./workers
 COPY --from=build /app/server ./server
 COPY --from=build /app/src/utils/iamRoles.js ./src/utils/iamRoles.js
+COPY --from=build /app/src/config ./src/config
 COPY --from=build /app/server.js ./server.js
 
 # Runtime environment (website only)
