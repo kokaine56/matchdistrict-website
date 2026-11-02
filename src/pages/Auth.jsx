@@ -373,17 +373,17 @@ function Auth({ onNavigate, initialMode = 'login' }) {
     const hasRetryAfter = params.has('retry_after') && Number(params.get('retry_after')) > 0
 
     if (errorCode === 'rate_limited' && hasRetryAfter) {
-      let retrySec = Number(params.get('retry_after'))
-      if (retrySec > 10000) {
-        retrySec = Math.ceil(retrySec / 1000)
-      }
-      retrySec = Math.min(900, Math.max(1, Math.round(retrySec)))
-      if (retrySec < 60) {
-        triggerToast(`Too many attempts. Please try again in ${retrySec} second${retrySec === 1 ? '' : 's'}.`)
-      } else {
-        const minutes = Math.ceil(retrySec / 60)
-        triggerToast(`Too many attempts. Please try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`)
-      }
+      const retrySec = Math.max(1, Math.ceil(Number(params.get('retry_after'))))
+      const hours = Math.floor(retrySec / 3600)
+      const minutes = Math.floor((retrySec % 3600) / 60)
+      const wait = hours && minutes
+        ? `${hours} hours ${minutes} minutes`
+        : hours
+          ? `${hours} hour${hours === 1 ? '' : 's'}`
+          : minutes
+            ? `${minutes} minute${minutes === 1 ? '' : 's'}`
+            : `${retrySec} second${retrySec === 1 ? '' : 's'}`
+      triggerToast(`Discord login is temporarily unavailable. Please try again in about ${wait}, or use Google or email login.`)
     } else if (reasonParam && !['unknown', 'rate_limited'].includes(reasonParam.toLowerCase())) {
       triggerToast(reasonParam)
     } else {

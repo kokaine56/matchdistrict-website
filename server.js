@@ -586,53 +586,92 @@ let discordRateLimitCooldown = {
   blockType: 'none',
   lastEncounteredAt: 0,
   endpoint: null,
+  retryCount: 0,
 };
+let discordCooldownLoaded = false;
+const DISCORD_COOLDOWN_SETTING_KEY = 'discord_api_rate_limit_cooldown';
 
-function clearDiscordRateLimits() {
-  discordRateLimitCooldown = {
-    activeUntil: 0,
-    retryAfterSeconds: 0,
-    blockType: 'none',
-    lastEncounteredAt: 0,
-    endpoint: null,
-  };
-  for (const key of rateLimitMap.keys()) {
-    if (key.startsWith('discord_')) {
-      rateLimitMap.delete(key);
+async function loadDiscordRateLimitCooldown() {
+  try {
+    const result = await pool.query('SELECT value FROM site_settings WHERE key = $1 LIMIT 1', [DISCORD_COOLDOWN_SETTING_KEY]);
+    const settingValue = result.rows[0]?.value;
+    const saved = settingValue ? (typeof settingValue === 'string' ? JSON.parse(settingValue) : settingValue) : null;
+    if (saved && Number.isFinite(Number(saved.activeUntil)) && Number(saved.activeUntil) > Date.now()) {
+      discordRateLimitCooldown = {
+        activeUntil: Number(saved.activeUntil),
+        retryAfterSeconds: Math.ceil((Number(saved.activeUntil) - Date.now()) / 1000),
+        blockType: saved.blockType || 'discord_api',
+        lastEncounteredAt: Number(saved.lastEncounteredAt) || 0,
+        endpoint: saved.endpoint || 'unknown',
+        retryCount: Number(saved.retryCount) || 0,
+      };
+      console.warn(`[DISCORD RATE LIMIT COOLDOWN LOADED] Endpoint: ${discordRateLimitCooldown.endpoint} | Ends: ${new Date(discordRateLimitCooldown.activeUntil).toISOString()}`);
     }
+    discordCooldownLoaded = true;
+  } catch (error) {
+    console.error('[DISCORD RATE LIMIT COOLDOWN LOAD FAILED] Discord OAuth remains fail-closed until persistence is available:', error);
   }
 }
 
-function recordDiscordRateLimit(endpoint, retryAfterSec, isHtml) {
-  let retrySec = parseInt(retryAfterSec, 10);
-  if (isNaN(retrySec) || retrySec <= 0) {
-    retrySec = 60;
+async function refreshDiscordRateLimitCooldown() {
+  try {
+    const result = await pool.query('SELECT value FROM site_settings WHERE key = $1 LIMIT 1', [DISCORD_COOLDOWN_SETTING_KEY]);
+    const settingValue = result.rows[0]?.value;
+    const saved = settingValue ? (typeof settingValue === 'string' ? JSON.parse(settingValue) : settingValue) : null;
+    if (saved && Number(saved.activeUntil) > discordRateLimitCooldown.activeUntil) {
+      discordRateLimitCooldown = {
+        activeUntil: Number(saved.activeUntil),
+        retryAfterSeconds: Math.ceil((Number(saved.activeUntil) - Date.now()) / 1000),
+        blockType: saved.blockType || 'discord_api',
+        lastEncounteredAt: Number(saved.lastEncounteredAt) || 0,
+        endpoint: saved.endpoint || 'unknown',
+        retryCount: Number(saved.retryCount) || 0,
+      };
+    }
+    discordCooldownLoaded = true;
+    return getActiveDiscordRateLimitCooldown();
+  } catch (error) {
+    console.error('[DISCORD COOLDOWN CHECK FAILED] Skipping Discord request because shared cooldown state is unavailable:', error);
+    return { isRateLimited: true, remainingSeconds: 300, blockType: 'cooldown_state_unavailable', endpoint: 'database' };
   }
-  // Detect if retryAfterSec was provided in milliseconds (e.g. 76800 ms -> 77s)
-  if (retrySec > 10000) {
-    retrySec = Math.ceil(retrySec / 1000);
-  }
-  // Cap at a sensible maximum window (15 minutes = 900 seconds)
-  retrySec = Math.min(900, Math.max(1, retrySec));
+}
 
+async function recordDiscordRateLimit(endpoint, retryAfterSec, isHtml) {
+  const priorRetryCount = discordRateLimitCooldown.retryCount || 0;
+  const hasRetryAfter = Number.isFinite(retryAfterSec) && retryAfterSec > 0;
+  const retrySec = hasRetryAfter
+    ? Math.ceil(retryAfterSec)
+    : 300 * (2 ** Math.min(priorRetryCount, 20));
+  const startedAt = Date.now();
   discordRateLimitCooldown = {
-    activeUntil: Date.now() + (retrySec * 1000),
+    activeUntil: startedAt + (retrySec * 1000),
     retryAfterSeconds: retrySec,
     blockType: isHtml ? 'ip_level_html' : 'discord_json',
-    lastEncounteredAt: Date.now(),
+    lastEncounteredAt: startedAt,
     endpoint,
+    retryCount: hasRetryAfter ? 0 : priorRetryCount + 1,
   };
-  console.warn(
-    `[DISCORD RATE LIMIT COOLDOWN SET] Endpoint: ${endpoint} | BlockType: ${discordRateLimitCooldown.blockType} | ` +
-    `Cooldown: ${retrySec}s (~${Math.round(retrySec / 60)}m) until ${new Date(discordRateLimitCooldown.activeUntil).toISOString()}`
-  );
+  const saved = JSON.stringify(discordRateLimitCooldown);
+  try {
+    await pool.query(
+      `INSERT INTO site_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      [DISCORD_COOLDOWN_SETTING_KEY, saved]
+    );
+  } catch (error) {
+    console.error('[DISCORD RATE LIMIT COOLDOWN PERSIST FAILED] In-memory cooldown remains active, but restart persistence could not be guaranteed:', error);
+  }
+  console.warn(`[DISCORD RATE LIMIT COOLDOWN SET] Endpoint: ${endpoint} | BlockType: ${discordRateLimitCooldown.blockType} | Started: ${new Date(startedAt).toISOString()} | Ends: ${new Date(discordRateLimitCooldown.activeUntil).toISOString()} | Retry-After: ${retrySec}s`);
 }
 
 function getActiveDiscordRateLimitCooldown() {
   const now = Date.now();
+  if (!discordCooldownLoaded) {
+    return { isRateLimited: true, remainingSeconds: 300, blockType: 'cooldown_state_loading', endpoint: 'startup' };
+  }
   if (now < discordRateLimitCooldown.activeUntil) {
     let remainingSeconds = Math.ceil((discordRateLimitCooldown.activeUntil - now) / 1000);
-    remainingSeconds = Math.min(900, Math.max(1, remainingSeconds));
+    remainingSeconds = Math.max(1, remainingSeconds);
     return {
       isRateLimited: true,
       remainingSeconds,
@@ -641,6 +680,27 @@ function getActiveDiscordRateLimitCooldown() {
     };
   }
   return { isRateLimited: false, remainingSeconds: 0, blockType: 'none', endpoint: null };
+}
+
+function formatDiscordWait(totalSeconds) {
+  const seconds = Math.max(1, Math.ceil(Number(totalSeconds) || 1));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours && minutes) return `${hours} hours ${minutes} minutes`;
+  if (hours) return `${hours} hour${hours === 1 ? '' : 's'}`;
+  if (minutes) return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  return `${seconds} second${seconds === 1 ? '' : 's'}`;
+}
+
+function parseDiscordRetryAfter(headerValue) {
+  if (!headerValue) return null;
+  const secondsMatch = String(headerValue).trim().match(/^(\d+(?:\.\d+)?)\s*(?:seconds?)?$/i);
+  if (secondsMatch) {
+    const seconds = Number(secondsMatch[1]);
+    return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : null;
+  }
+  const retryDate = Date.parse(headerValue);
+  return Number.isFinite(retryDate) ? Math.max(1, Math.ceil((retryDate - Date.now()) / 1000)) : null;
 }
 
 function analyzeDiscordResponse(res, rawBody, stepName) {
@@ -1870,8 +1930,6 @@ const UNIQUE_AMOUNT_SUFFIX_RANGE = 99;         // max paisa suffix (0.01–0.99)
 
 // ── Existing in-memory rate limiter used by upload and invitation routes ──
 const rateLimitMap = new Map();
-// Discord limiter entries are process-local and should not carry over on restart.
-clearDiscordRateLimits();
 
 // Account safety: verification abuse guard, notification/abuse cleanup jobs.
 const accountSecurity = createAccountSecurity({
@@ -3764,17 +3822,21 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
     const authUserId = authUser ? (authUser.id || authUser.uid) : null;
     console.log(`[DISCORD AUTH START] Flow: ${isLoginFlow ? 'login' : 'link'} | IP: ${clientIp} | User: ${authUserId || 'guest'} | RedirectParam: ${parsedUrl.searchParams.get('redirect') || 'none'}`);
 
-    // For account linking only, check if global Discord API cooldown is active.
-    // For login flow (/api/auth/discord/login), NEVER block the user from redirecting to discord.com.
-    if (!isLoginFlow) {
-      const activeGlobalCooldown = getActiveDiscordRateLimitCooldown();
-      if (activeGlobalCooldown.isRateLimited) {
+    const activeGlobalCooldown = await refreshDiscordRateLimitCooldown();
+    if (activeGlobalCooldown.isRateLimited) {
+      console.warn(`[DISCORD REQUEST SKIPPED] Stage: OAuth start | Flow: ${isLoginFlow ? 'login' : 'link'} | Endpoint: discord.com/oauth2/authorize | Cooldown ends: ${discordRateLimitCooldown.activeUntil ? new Date(discordRateLimitCooldown.activeUntil).toISOString() : 'cooldown state loading'}`);
+      if (isLoginFlow) {
+        res.writeHead(302, { Location: `/login?discord_error=rate_limited&retry_after=${activeGlobalCooldown.remainingSeconds}` });
+        res.end();
+        return;
+      }
         console.warn(`[DISCORD AUTH] Connect start blocked by active Discord rate limit cooldown (${activeGlobalCooldown.remainingSeconds}s remaining). Block type: ${activeGlobalCooldown.blockType}`);
         res.writeHead(302, { Location: linkErrorRedirect('rate_limited', activeGlobalCooldown.remainingSeconds) });
         res.end();
         return;
-      }
+    }
 
+    if (!isLoginFlow) {
       // Generous rate limit for linking only; never block on private/proxy IP
       if (!isPrivateOrProxyIp(clientIp)) {
         const ipLimit = checkRateLimit('discord_connect_ip:' + clientIp, 120, 10 * 60 * 1000);
@@ -4017,6 +4079,14 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
         return;
       }
 
+      const callbackCooldown = await refreshDiscordRateLimitCooldown();
+      if (callbackCooldown.isRateLimited) {
+        console.warn(`[DISCORD REQUEST SKIPPED] Stage: token exchange | Endpoint: ${DISCORD_API_BASE_URL}/oauth2/token | Cooldown ends: ${discordRateLimitCooldown.activeUntil ? new Date(discordRateLimitCooldown.activeUntil).toISOString() : 'cooldown state loading'} | Retry-After: ${callbackCooldown.remainingSeconds}s`);
+        res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation('rate_limited', callbackCooldown.remainingSeconds, 'Discord login is temporarily unavailable.') });
+        res.end();
+        return;
+      }
+
       // Idempotent authorization code handling: prevent duplicate token exchange while replaying success on prefetch/retries
       if (processedDiscordCodes.has(queryCode)) {
         const prior = processedDiscordCodes.get(queryCode);
@@ -4063,13 +4133,11 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
 
       let tokenRes;
       let rawBody = '';
-      const maxTokenAttempts = 1;
-      for (let attempt = 1; attempt <= maxTokenAttempts; attempt++) {
-        const tokenAbort = new AbortController();
-        const tokenTimer = setTimeout(() => tokenAbort.abort(), 10000);
-        console.log(`[DISCORD TOKEN EXCHANGE REQUEST] POST ${DISCORD_API_BASE_URL}/oauth2/token | Content-Type: application/x-www-form-urlencoded | Accept: application/json | User-Agent: ${DISCORD_API_USER_AGENT} | CodeExchange: once`);
-        try {
-          tokenRes = await fetch(`${DISCORD_API_BASE_URL}/oauth2/token`, {
+      const tokenAbort = new AbortController();
+      const tokenTimer = setTimeout(() => tokenAbort.abort(), 10000);
+      console.log(`[DISCORD TOKEN EXCHANGE REQUEST] POST ${DISCORD_API_BASE_URL}/oauth2/token | Content-Type: application/x-www-form-urlencoded | Accept: application/json | User-Agent: ${DISCORD_API_USER_AGENT} | CodeExchange: once`);
+      try {
+        tokenRes = await fetch(`${DISCORD_API_BASE_URL}/oauth2/token`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
@@ -4078,36 +4146,20 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
             },
             body: tokenBody.toString(),
             signal: tokenAbort.signal
-          });
-          clearTimeout(tokenTimer);
-          rawBody = await tokenRes.text().catch(() => '');
-          console.log(`[DISCORD TOKEN EXCHANGE RESPONSE] Attempt: ${attempt} | Status: ${tokenRes.status} | Headers: ${JSON.stringify(Object.fromEntries(tokenRes.headers.entries()))} | Body: ${rawBody.replace(/("(?:access_token|refresh_token|client_secret)"\s*:\s*")[^"]*(")/gi, '$1[REDACTED]$2')}`);
-
-          if (tokenRes.status === 429 && attempt < maxTokenAttempts) {
-            const analysis = analyzeDiscordResponse(tokenRes, rawBody, 'token_exchange_retry_check');
-            const headerRetry = analysis.retryAfter || analysis.parsedJson?.retry_after;
-            let retrySec = headerRetry ? parseFloat(headerRetry) : 1;
-            if (isNaN(retrySec) || retrySec <= 0) retrySec = 1;
-            if (retrySec > 10000) retrySec = retrySec / 1000;
-            if (retrySec <= 2.5) {
-              const waitMs = Math.ceil(retrySec * 1000) + 200;
-              console.warn(`[DISCORD TOKEN EXCHANGE] Short rate limit detected (${retrySec}s). Waiting ${waitMs}ms before retry...`);
-              await new Promise(r => setTimeout(r, waitMs));
-              continue;
-            }
-          }
-          break;
-        } catch (fetchErr) {
-          clearTimeout(tokenTimer);
-          const durationMs = Date.now() - exchangeStartTime;
-          const isTimeout = tokenAbort.signal.aborted || fetchErr.name === 'AbortError';
-          const stepName = isTimeout ? 'token_exchange_timeout' : 'token_exchange_network';
-          const errCode = isTimeout ? 'timeout' : 'token_exchange_failed';
-          console.error(`[DISCORD TOKEN EXCHANGE ERROR] step: ${stepName} | status: 0 | content_type: none | error: ${isTimeout ? 'timeout' : 'network_error'} | description: ${fetchErr.message} | pkce: ${pkceUsed} | duration_ms: ${durationMs}`);
-          res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation(errCode, null, fetchErr.message) });
-          res.end();
-          return;
-        }
+        });
+        clearTimeout(tokenTimer);
+        rawBody = await tokenRes.text().catch(() => '');
+        console.log(`[DISCORD TOKEN EXCHANGE RESPONSE] Status: ${tokenRes.status} | Headers: ${JSON.stringify(Object.fromEntries(tokenRes.headers.entries()))} | Body: ${rawBody.replace(/("(?:access_token|refresh_token|client_secret)"\s*:\s*")[^"]*(")/gi, '$1[REDACTED]$2')}`);
+      } catch (fetchErr) {
+        clearTimeout(tokenTimer);
+        const durationMs = Date.now() - exchangeStartTime;
+        const isTimeout = tokenAbort.signal.aborted || fetchErr.name === 'AbortError';
+        const stepName = isTimeout ? 'token_exchange_timeout' : 'token_exchange_network';
+        const errCode = isTimeout ? 'timeout' : 'token_exchange_failed';
+        console.error(`[DISCORD TOKEN EXCHANGE ERROR] step: ${stepName} | status: 0 | content_type: none | error: ${isTimeout ? 'timeout' : 'network_error'} | description: ${fetchErr.message} | pkce: ${pkceUsed} | duration_ms: ${durationMs}`);
+        res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation(errCode, null, fetchErr.message) });
+        res.end();
+        return;
       }
 
       if (!tokenRes.ok) {
@@ -4124,25 +4176,11 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           reason = 'Invalid client credentials';
         } else if (tokenRes.status === 429) {
           console.error(`[DISCORD TOKEN EXCHANGE ERROR] HTTP 429 | Body: ${rawBody} | Retry-After: ${analysis.retryAfter || 'missing'}`);
-          const headerRetry = analysis.retryAfter;
-          if (!headerRetry) {
-            reason = 'Discord returned HTTP 429 without a Retry-After value';
-          }
-          let parsedVal = headerRetry ? parseFloat(headerRetry) : NaN;
-          if (headerRetry && !Number.isFinite(parsedVal)) {
-            const retryDate = Date.parse(headerRetry);
-            if (Number.isFinite(retryDate)) parsedVal = Math.max(1, Math.ceil((retryDate - Date.now()) / 1000));
-          }
-          if (isNaN(parsedVal) || parsedVal <= 0) parsedVal = NaN;
-          if (parsedVal > 10000) parsedVal = parsedVal / 1000;
-          if (Number.isFinite(parsedVal)) {
-            clientRedirectCode = 'rate_limited';
-            retryAfterVal = Math.min(900, Math.ceil(parsedVal));
-            recordDiscordRateLimit('oauth2/token', retryAfterVal, analysis.isHtml);
-            reason = `Discord API rate limited (retry in ${retryAfterVal}s)`;
-          } else {
-            clientRedirectCode = 'token_exchange_failed';
-          }
+          const parsedVal = parseDiscordRetryAfter(analysis.retryAfter);
+          await recordDiscordRateLimit('oauth2/token', parsedVal, analysis.isHtml);
+          retryAfterVal = discordRateLimitCooldown.retryAfterSeconds;
+          clientRedirectCode = 'rate_limited';
+          reason = `Discord login is temporarily unavailable. Please try again in about ${formatDiscordWait(retryAfterVal)}, or use Google or email login.`;
         } else if (tokenRes.status === 403) {
           clientRedirectCode = 'blocked';
           reason = 'Discord blocked the request';
@@ -4164,53 +4202,39 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
       const accessToken = tokenJson.access_token;
       const tokenType = tokenJson.token_type || 'Bearer';
 
-      // Small pacing delay to avoid burst rate limiting
-      await new Promise((resolve) => setTimeout(resolve, 150));
-
       // Fetch user profile from Discord (id, username, global_name, avatar, email)
       let userRes;
       let rawUserBody = '';
-      const maxUserAttempts = 1;
-      for (let attempt = 1; attempt <= maxUserAttempts; attempt++) {
-        const userAbort = new AbortController();
-        const userTimer = setTimeout(() => userAbort.abort(), 10000);
-        try {
-          console.log(`[DISCORD USER FETCH REQUEST] GET ${DISCORD_API_BASE_URL}/users/@me | Accept: application/json | User-Agent: ${DISCORD_API_USER_AGENT}`);
-          userRes = await fetch(`${DISCORD_API_BASE_URL}/users/@me`, {
+      const userCooldown = await refreshDiscordRateLimitCooldown();
+      if (userCooldown.isRateLimited) {
+        console.warn(`[DISCORD REQUEST SKIPPED] Stage: user fetch | Endpoint: ${DISCORD_API_BASE_URL}/users/@me | Cooldown ends: ${discordRateLimitCooldown.activeUntil ? new Date(discordRateLimitCooldown.activeUntil).toISOString() : 'cooldown state loading'} | Retry-After: ${userCooldown.remainingSeconds}s`);
+        res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation('rate_limited', userCooldown.remainingSeconds, 'Discord login is temporarily unavailable.') });
+        res.end();
+        return;
+      }
+      const userAbort = new AbortController();
+      const userTimer = setTimeout(() => userAbort.abort(), 10000);
+      try {
+        console.log(`[DISCORD USER FETCH REQUEST] GET ${DISCORD_API_BASE_URL}/users/@me | Accept: application/json | User-Agent: ${DISCORD_API_USER_AGENT}`);
+        userRes = await fetch(`${DISCORD_API_BASE_URL}/users/@me`, {
             headers: {
               'Authorization': `${tokenType} ${accessToken}`,
               'Accept': 'application/json',
               'User-Agent': DISCORD_API_USER_AGENT
             },
             signal: userAbort.signal
-          });
-          clearTimeout(userTimer);
-          rawUserBody = await userRes.text().catch(() => '');
-          console.log(`[DISCORD USER FETCH RESPONSE] Attempt: ${attempt} | Status: ${userRes.status} | Headers: ${JSON.stringify(Object.fromEntries(userRes.headers.entries()))} | Body: ${rawUserBody}`);
-
-          if (userRes.status === 429 && attempt < maxUserAttempts) {
-            const analysis = analyzeDiscordResponse(userRes, rawUserBody, 'profile_fetch_retry_check');
-            const headerRetry = analysis.retryAfter || analysis.parsedJson?.retry_after;
-            let retrySec = headerRetry ? parseFloat(headerRetry) : 1;
-            if (isNaN(retrySec) || retrySec <= 0) retrySec = 1;
-            if (retrySec > 10000) retrySec = retrySec / 1000;
-            if (retrySec <= 2.5) {
-              const waitMs = Math.ceil(retrySec * 1000) + 200;
-              console.warn(`[DISCORD USER FETCH] Short rate limit detected (${retrySec}s). Waiting ${waitMs}ms before retry...`);
-              await new Promise(r => setTimeout(r, waitMs));
-              continue;
-            }
-          }
-          break;
-        } catch (userFetchErr) {
-          clearTimeout(userTimer);
-          const isTimeout = userAbort.signal.aborted || userFetchErr.name === 'AbortError';
-          const errCode = isTimeout ? 'timeout' : 'profile_fetch_failed';
-          console.error(`[DISCORD CONNECT ERROR] Step: profile_fetch_network | Code: ${errCode} | Exception: ${userFetchErr.message}`);
-          res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation(errCode, null, userFetchErr.message) });
-          res.end();
-          return;
-        }
+        });
+        clearTimeout(userTimer);
+        rawUserBody = await userRes.text().catch(() => '');
+        console.log(`[DISCORD USER FETCH RESPONSE] Status: ${userRes.status} | Headers: ${JSON.stringify(Object.fromEntries(userRes.headers.entries()))} | Body: ${rawUserBody}`);
+      } catch (userFetchErr) {
+        clearTimeout(userTimer);
+        const isTimeout = userAbort.signal.aborted || userFetchErr.name === 'AbortError';
+        const errCode = isTimeout ? 'timeout' : 'profile_fetch_failed';
+        console.error(`[DISCORD CONNECT ERROR] Step: profile_fetch_network | Code: ${errCode} | Exception: ${userFetchErr.message}`);
+        res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation(errCode, null, userFetchErr.message) });
+        res.end();
+        return;
       }
 
       if (!userRes.ok) {
@@ -4221,23 +4245,11 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
         let reason = null;
         if (userRes.status === 429) {
           console.error(`[DISCORD USER FETCH ERROR] HTTP 429 | Body: ${rawUserBody} | Retry-After: ${analysis.retryAfter || 'missing'}`);
-          const headerRetry = analysis.retryAfter;
-          let parsedVal = headerRetry ? parseFloat(headerRetry) : NaN;
-          if (headerRetry && !Number.isFinite(parsedVal)) {
-            const retryDate = Date.parse(headerRetry);
-            if (Number.isFinite(retryDate)) parsedVal = Math.max(1, Math.ceil((retryDate - Date.now()) / 1000));
-          }
-          if (isNaN(parsedVal) || parsedVal <= 0) parsedVal = NaN;
-          if (parsedVal > 10000) parsedVal = parsedVal / 1000;
-          if (Number.isFinite(parsedVal)) {
-            clientRedirectCode = 'rate_limited';
-            retryAfterVal = Math.min(900, Math.ceil(parsedVal));
-            recordDiscordRateLimit('users/@me', retryAfterVal, analysis.isHtml);
-            reason = `Discord profile rate limited (retry in ${retryAfterVal}s)`;
-          } else {
-            clientRedirectCode = 'profile_fetch_failed';
-            reason = 'Discord returned HTTP 429 without a Retry-After value';
-          }
+          const parsedVal = parseDiscordRetryAfter(analysis.retryAfter);
+          await recordDiscordRateLimit('users/@me', parsedVal, analysis.isHtml);
+          retryAfterVal = discordRateLimitCooldown.retryAfterSeconds;
+          clientRedirectCode = 'rate_limited';
+          reason = `Discord login is temporarily unavailable. Please try again in about ${formatDiscordWait(retryAfterVal)}, or use Google or email login.`;
         } else if (userRes.status === 403) {
           clientRedirectCode = 'blocked';
           reason = 'Discord profile access blocked';
@@ -4427,9 +4439,8 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           id: targetUser.uid || targetUser.id
         });
 
-        // Successful login: rollback rate limit hits and clear any stale Discord rate limit cooldown
+        // Successful login: roll back the applicable connection rate-limit hit.
         rollbackRateLimit('discord_connect_ip:' + clientIp);
-        clearDiscordRateLimits();
 
         const safeLoginReturn = getSafeRelativeRedirect(statePayload.returnTo, '/');
         const postLoginPath = getDiscordJoinReturnPath(safeLoginReturn, 'connected');
@@ -22467,7 +22478,7 @@ server.listen(PORT, '0.0.0.0', () => {
       startMonitoringWorker();
       accountSecurity.startNotificationCleanup();
       accountSecurity.startAbuseCleanup();
-      clearDiscordRateLimits();
+      await loadDiscordRateLimitCooldown();
     } catch (workerError) {
       console.error('⚠️ [STARTUP] Background worker initialization error:', workerError.message);
     }
