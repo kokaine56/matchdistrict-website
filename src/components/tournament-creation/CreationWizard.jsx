@@ -18,6 +18,29 @@ import Step8Preview from './steps/Step8Preview'
 import Step9Publish from './steps/Step9Publish'
 import { buildPlanningConfigPayload, DEFAULT_ROADMAP_PLANNING, deriveTournamentPlanningConfig } from './planningConfigModel'
 
+const ALL_STEPS = [
+  { id: 1, label: 'Basic Details' },
+  { id: 2, label: 'Match Setup' },
+  { id: 3, label: 'Slots & Entry' },
+  { id: 4, label: 'Prize Pool' },
+  { id: 5, label: 'Media' },
+  { id: 6, label: 'Schedule' },
+  { id: 7, label: 'Rules & Regulations' },
+  { id: 8, label: 'Preview' },
+  { id: 9, label: 'Publish' },
+]
+
+const FREE_STEPS = [
+  { id: 1, label: 'Basic Details' },
+  { id: 2, label: 'Match Setup' },
+  { id: 3, label: 'Slots & Capacity' },
+  { id: 5, label: 'Media' },
+  { id: 6, label: 'Schedule' },
+  { id: 7, label: 'Rules & Regulations' },
+  { id: 8, label: 'Preview' },
+  { id: 9, label: 'Publish' },
+]
+
 const STEPS = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 const LS_KEY = 'md_tournament_draft'
 
@@ -170,8 +193,25 @@ export default function CreationWizard() {
   const orgTier = currentUser?.tier || 'Free'
   const orgLogo = currentUser?.orgImage || currentUser?.avatar || ''
 
-  const totalSteps = STEPS.length
-  const isLastStep = currentStep === totalSteps
+  const activeSteps = useMemo(() => {
+    return formData.is_free ? FREE_STEPS : ALL_STEPS
+  }, [formData.is_free])
+
+  const currentStepIndex = useMemo(() => {
+    const idx = activeSteps.findIndex((s) => s.id === currentStep)
+    return idx >= 0 ? idx : 0
+  }, [activeSteps, currentStep])
+
+  // If switched to free while on step 4, skip forward to step 5
+  useEffect(() => {
+    if (formData.is_free && currentStep === 4) {
+      setCurrentStep(5)
+    }
+  }, [formData.is_free, currentStep])
+
+  const totalSteps = activeSteps.length
+  const isLastStep = currentStepIndex === activeSteps.length - 1
+  const currentStepDisplayNumber = currentStepIndex + 1
   const [stepValidationBlocked, setStepValidationBlocked] = useState({})
   const isNavigationBlocked = stepValidationBlocked[currentStep] === true
   const [recoveredStep, setRecoveredStep] = useState(1)
@@ -341,9 +381,11 @@ export default function CreationWizard() {
 
       const prizePoolAmount = Number(formData.prize_pool_amount) || 0
 
-const body = {
+const isFreeTournament = Boolean(formData.is_free)
+      const body = {
         title: formData.title,
         game: formData.game,
+        is_free: isFreeTournament,
         isDraft,
         status: isPublished ? 'upcoming' : 'draft',
         date: formData.registrationOpenDate || '',
@@ -352,30 +394,30 @@ const body = {
         orgName: '',
         teamsCount: '0',
         featured: false,
-        prize: prizePoolAmount > 0 ? `₹${prizePoolAmount.toLocaleString('en-IN')}` : 'TBD',
-        entry: formData.entry_fee_amount ? `₹${parseInt(formData.entry_fee_amount)}` : 'Free',
+        prize: isFreeTournament ? '' : (prizePoolAmount > 0 ? `₹${prizePoolAmount.toLocaleString('en-IN')}` : 'TBD'),
+        entry: isFreeTournament ? 'Free' : (formData.entry_fee_amount ? `₹${parseInt(formData.entry_fee_amount)}` : 'Free'),
         registrationOpenDate: formData.registrationOpenDate || '',
         registrationCloseDate: formData.registrationCloseDate || '',
         startDate: formData.startDate || '',
         match_type: formData.match_type || 'squad',
         perspective: formData.perspective || 'tpp',
         reserved_slots: parseInt(formData.reserved_slots) || 0,
-        entry_fee_amount: parseInt(formData.entry_fee_amount) || 0,
+        entry_fee_amount: isFreeTournament ? 0 : (parseInt(formData.entry_fee_amount) || 0),
         prize_pool_type: 'fixed',
-        prize_pool_amount: prizePoolAmount,
-        prize_split_1st: formData.prize_split_1st || '',
-        prize_split_2nd: formData.prize_split_2nd || '',
-        prize_split_3rd: formData.prize_split_3rd || '',
-        prize_split_mvp: formData.prize_split_mvp || '',
-        mvp_enabled: formData.mvp_enabled || false,
-        mvp_amount: parseInt(formData.mvp_amount) || 0,
-        kill_reward_enabled: formData.kill_reward_enabled || false,
-        kill_reward_per_kill: parseInt(formData.kill_reward_per_kill) || 0,
-        prize_positions: JSON.stringify(formData.prize_positions || []),
+        prize_pool_amount: isFreeTournament ? 0 : prizePoolAmount,
+        prize_split_1st: isFreeTournament ? '' : (formData.prize_split_1st || ''),
+        prize_split_2nd: isFreeTournament ? '' : (formData.prize_split_2nd || ''),
+        prize_split_3rd: isFreeTournament ? '' : (formData.prize_split_3rd || ''),
+        prize_split_mvp: isFreeTournament ? '' : (formData.prize_split_mvp || ''),
+        mvp_enabled: isFreeTournament ? false : (formData.mvp_enabled || false),
+        mvp_amount: isFreeTournament ? 0 : (parseInt(formData.mvp_amount) || 0),
+        kill_reward_enabled: isFreeTournament ? false : (formData.kill_reward_enabled || false),
+        kill_reward_per_kill: isFreeTournament ? 0 : (parseInt(formData.kill_reward_per_kill) || 0),
+        prize_positions: isFreeTournament ? '[]' : JSON.stringify(formData.prize_positions || []),
         description: formData.description || '',
         cover_image_url: '',
         slotsTotal: parseInt(formData.slotsTotal) || 100,
-        sponsors_enabled: formData.sponsors_enabled ?? false,
+        sponsors_enabled: isFreeTournament ? false : (formData.sponsors_enabled ?? false),
         rules: formData.rules || '',
         teams_per_group: formData.teams_per_group ? parseInt(formData.teams_per_group) : 16,
       teams_per_match: formData.teams_per_group ? parseInt(formData.teams_per_group) : 16,
@@ -476,15 +518,21 @@ const body = {
       return
     }
     if (isNavigationBlocked) return
-    setCurrentStep((s) => Math.min(s + 1, totalSteps))
+    const nextStepObj = activeSteps[currentStepIndex + 1]
+    if (nextStepObj) {
+      setCurrentStep(nextStepObj.id)
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' })
-  }, [currentStep, formData, planLimits, totalSteps, isNavigationBlocked, orgName, userTier, stepValidationBlocked, currentUser])
+  }, [currentStep, formData, planLimits, activeSteps, currentStepIndex, isNavigationBlocked, orgName, userTier, stepValidationBlocked, currentUser])
 
   const handleBack = useCallback(() => {
     setErrors({})
-    setCurrentStep((s) => Math.max(s - 1, 1))
+    const prevStepObj = activeSteps[currentStepIndex - 1]
+    if (prevStepObj) {
+      setCurrentStep(prevStepObj.id)
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' })
-  }, [])
+  }, [activeSteps, currentStepIndex])
 
   const hasFormData = useMemo(() => {
     return !!(formData.title || formData.game || formData.description || formData.cover_image_url)
@@ -563,8 +611,8 @@ const body = {
   const handlePublish = useCallback(async () => {
     setPublishError(null)
     let allErrors = {}
-    for (const step of STEPS) {
-      const errs = validateStep(step, formData, planLimits, orgName, userTier, currentUser?.role)
+    for (const s of activeSteps) {
+      const errs = validateStep(s.id, formData, planLimits, orgName, userTier, currentUser?.role)
       if (hasErrors(errs)) allErrors = { ...allErrors, ...errs }
     }
     if (hasErrors(allErrors)) {
@@ -585,8 +633,8 @@ const body = {
     setPublishError(null)
     // Full validation across all steps
     let allErrors = {}
-    for (const step of STEPS) {
-      const errs = validateStep(step, formData, planLimits, orgName, userTier, currentUser?.role)
+    for (const s of activeSteps) {
+      const errs = validateStep(s.id, formData, planLimits, orgName, userTier, currentUser?.role)
       if (hasErrors(errs)) allErrors = { ...allErrors, ...errs }
     }
     if (hasErrors(allErrors)) {
@@ -751,7 +799,7 @@ const body = {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-6">
-        <StepIndicator currentStep={currentStep} />
+        <StepIndicator currentStep={currentStep} steps={activeSteps} />
       </div>
 
       <div className="max-w-4xl mx-auto px-4 pb-12 lg:pb-32 tournament-creation-container">
@@ -771,7 +819,7 @@ const body = {
           {/* In-flow action buttons on mobile & tablet: always visible at end of step, never trapped under bottom nav */}
           <div className="mt-8 pt-5 border-t border-slate-200 dark:border-outline-variant/30 lg:hidden">
             <StepNavigation
-              currentStep={currentStep}
+              currentStep={currentStepDisplayNumber}
               totalSteps={totalSteps}
               onBack={handleBack}
               onNext={handleNext}

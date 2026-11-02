@@ -64,6 +64,70 @@ export default function Step1BasicDetails({ data, onChange, errors, orgName }) {
         <p className="text-sm text-on-surface-variant mt-1">Set the foundation for your tournament.</p>
       </div>
 
+      {/* Tournament Type: Paid vs Free */}
+      <div>
+        <label className="block text-sm font-medium text-on-surface-variant mb-2">
+          Tournament Type <span className="text-error">*</span>
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              if (data.is_free) {
+                onChange({ ...data, is_free: false });
+              }
+            }}
+            className={`p-3.5 rounded-xl border text-left transition-all ${
+              !data.is_free
+                ? 'bg-primary/10 border-primary shadow-[0_0_12px_rgba(59,130,246,0.15)] ring-1 ring-primary/40'
+                : 'bg-surface-container border-slate-200 dark:border-outline-variant/30 text-on-surface-variant hover:border-outline-variant/60'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className={`text-sm font-bold ${!data.is_free ? 'text-primary' : 'text-on-background'}`}>
+                Paid
+              </span>
+              <span className={`w-2.5 h-2.5 rounded-full ${!data.is_free ? 'bg-primary ring-2 ring-primary/30' : 'bg-transparent border border-outline-variant'}`} />
+            </div>
+            <p className="text-xs text-on-surface-variant">Includes entry fee & prize pool</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!data.is_free) {
+                onChange({
+                  ...data,
+                  is_free: true,
+                  entry_fee_amount: '0',
+                  prize_pool_amount: '0',
+                  entry: 'Free',
+                  prize: '',
+                  prize_positions: [],
+                  mvp_enabled: false,
+                  mvp_amount: '0',
+                  kill_reward_enabled: false,
+                  kill_reward_per_kill: '0',
+                  sponsors_enabled: false,
+                });
+              }
+            }}
+            className={`p-3.5 rounded-xl border text-left transition-all ${
+              data.is_free
+                ? 'bg-emerald-500/10 border-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.15)] ring-1 ring-emerald-500/40'
+                : 'bg-surface-container border-slate-200 dark:border-outline-variant/30 text-on-surface-variant hover:border-outline-variant/60'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className={`text-sm font-bold ${data.is_free ? 'text-emerald-500' : 'text-on-background'}`}>
+                Free
+              </span>
+              <span className={`w-2.5 h-2.5 rounded-full ${data.is_free ? 'bg-emerald-500 ring-2 ring-emerald-500/30' : 'bg-transparent border border-outline-variant'}`} />
+            </div>
+            <p className="text-xs text-on-surface-variant">No entry fee, open participation</p>
+          </button>
+        </div>
+      </div>
+
       <div>
         <label className="block text-sm font-medium text-on-surface-variant mb-1.5">
           Tournament Title <span className="text-error">*</span>

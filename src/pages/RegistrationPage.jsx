@@ -831,6 +831,7 @@ function RegistrationPage({ onNavigate }) {
   const totalPlayers = 1 + form.players.filter(p => p.ign.trim() && p.uid.trim()).length
   const entryDisplay = useMemo(() => {
     if (!tourney) return ''
+    if (tourney.is_free) return 'Free'
     const fee = parseInt(tourney.entry_fee_amount) || 0
     if (fee === 0) return 'Free'
     return `₹${fee.toLocaleString('en-IN')}`
@@ -908,11 +909,19 @@ function RegistrationPage({ onNavigate }) {
           </div>
 
           {/* Registration Status */}
-          <div className="mt-4 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between gap-3 text-xs">
+          <div className={`mt-4 p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+            isPaid
+              ? 'bg-amber-500/10 border-amber-500/25'
+              : 'bg-emerald-500/10 border-emerald-500/25'
+          }`}>
             <div className="flex items-center gap-2.5 min-w-0">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
-              <span className="font-bold text-amber-700 dark:text-amber-300 truncate">
-                {isPaid ? 'Payment Proof Submitted • Pending Review' : 'Registration Submitted • Pending Approval'}
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                isPaid ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+              }`} />
+              <span className={`font-bold truncate ${
+                isPaid ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'
+              }`}>
+                {isPaid ? 'Payment Proof Submitted • Pending Review' : 'Registration Confirmed • Slot Secured'}
               </span>
             </div>
             {submittedTimeIST && (
@@ -922,7 +931,7 @@ function RegistrationPage({ onNavigate }) {
           <p className="text-xs text-on-surface-variant text-center mt-2.5 leading-relaxed max-w-sm mx-auto">
             {isPaid
               ? 'Your payment proof has been submitted for admin verification. Your team slot will be confirmed upon approval.'
-              : 'Your squad registration has been submitted and is awaiting tournament organizer review.'}
+              : 'Your registration is confirmed and your slot is secured.'}
           </p>
 
           {/* Registration Details */}
@@ -934,8 +943,12 @@ function RegistrationPage({ onNavigate }) {
               </div>
               <div className="flex items-center justify-between p-3 gap-3">
                 <span className="text-on-surface-variant font-medium shrink-0">Registration Status</span>
-                <span className="px-2.5 py-0.5 rounded-full font-bold text-[11px] bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 capitalize">
-                  {toMessage(registeredTeam.status || 'pending').replace('_', ' ')}
+                <span className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] capitalize ${
+                  (registeredTeam.status || '').toLowerCase() === 'approved'
+                    ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300'
+                }`}>
+                  {(registeredTeam.status || '').toLowerCase() === 'approved' ? 'Confirmed' : toMessage(registeredTeam.status || 'pending').replace('_', ' ')}
                 </span>
               </div>
               <div className="flex items-center justify-between p-3 gap-2">
@@ -960,7 +973,7 @@ function RegistrationPage({ onNavigate }) {
                   </button>
                 </div>
               </div>
-              {amountToPay && (
+              {isPaid && amountToPay && (
                 <div className="flex items-center justify-between p-3 gap-3">
                   <span className="text-on-surface-variant font-medium shrink-0">Amount Due</span>
                   <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono text-sm">

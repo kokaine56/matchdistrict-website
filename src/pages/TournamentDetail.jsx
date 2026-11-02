@@ -264,6 +264,13 @@ function TournamentDetail({ onNavigate, tournamentId }) {
   // Countdown state
   const [countdown, setCountdown] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, label: '', active: false, type: '' });
   const [activeTab, setActiveTab] = useState('overview');
+
+  useEffect(() => {
+    if (isFreeTournament && activeTab === 'prize') {
+      setActiveTab('overview');
+    }
+  }, [isFreeTournament, activeTab]);
+
   const [openRule, setOpenRule] = useState(null);
 
   const [currentUser] = useCurrentUser();
@@ -1266,19 +1273,21 @@ function TournamentDetail({ onNavigate, tournamentId }) {
                   </div>
 
                   {/* Data Grid - 2x2 unified */}
-                  <div className="grid grid-cols-2 gap-y-4 gap-x-4 w-full mt-4">
-                    {/* Prize */}
-                    <div className="flex flex-col items-start gap-0.5">
-                      <span className={`text-[10px] font-bold uppercase tracking-widest ${isGoldTheme ? 'text-[#FFFFFF]/85' : 'text-slate-600'}`}>PRIZE</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className={`text-sm sm:text-base font-extrabold ${isGoldTheme ? 'text-[#FFFFFF]' : 'text-slate-900'}`}>{prizeDisplay}</span>
-                        {sponsoredAmount > 0 && (
-                          <svg className="w-4 h-4 text-amber-400 shrink-0 drop-shadow-sm" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                          </svg>
-                        )}
+                  <div className={`grid gap-y-4 gap-x-4 w-full mt-4 ${isFreeTournament ? 'grid-cols-2' : 'grid-cols-2'}`}>
+                    {!isFreeTournament && (
+                      /* Prize */
+                      <div className="flex flex-col items-start gap-0.5">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${isGoldTheme ? 'text-[#FFFFFF]/85' : 'text-slate-600'}`}>PRIZE</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-sm sm:text-base font-extrabold ${isGoldTheme ? 'text-[#FFFFFF]' : 'text-slate-900'}`}>{prizeDisplay}</span>
+                          {sponsoredAmount > 0 && (
+                            <svg className="w-4 h-4 text-amber-400 shrink-0 drop-shadow-sm" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                            </svg>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                     {/* Entry */}
                     <div className="flex flex-col items-start gap-0.5">
                       <span className={`text-[10px] font-bold uppercase tracking-widest ${isGoldTheme ? 'text-[#FFFFFF]/85' : 'text-slate-600'}`}>ENTRY</span>
@@ -1601,7 +1610,7 @@ function TournamentDetail({ onNavigate, tournamentId }) {
             <div className="flex items-center gap-4 sm:gap-6 overflow-x-auto whitespace-nowrap pb-3 scrollbar-hide [touch-action:pan-x_pan-y] overscroll-x-contain">
               {[
                 { id: 'overview', label: 'Overview' },
-                { id: 'prize', label: 'Prize Pool' },
+                ...(!isFreeTournament ? [{ id: 'prize', label: 'Prize Pool' }] : []),
                 /* My Team tab hidden in UI only; code preserved below */
                 // ...(currentUser ? [{ id: 'my_team', label: 'My Team' }] : []),
                 { id: 'rules', label: 'Rules & Regulations' },

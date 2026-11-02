@@ -229,22 +229,24 @@ function WalletPassCard({
             </div>
 
             {/* Prize & Entry Rows (Adaptive Contrast System: Light vs Dark Theme) */}
-            <div className={`grid grid-cols-2 gap-2 py-1.5 border-y ${cc.divider} leading-none`}>
-              {/* Prize Value */}
-              <div className="flex items-center gap-1 min-w-0">
-                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={`${cc.prizeIcon || 'text-amber-400'} shrink-0`}>
-                  <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
-                  <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
-                  <path d="M4 22h16" />
-                  <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
-                  <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
-                  <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
-                </svg>
-                <span className={`text-[10px] sm:text-[11px] font-black ${cc.prizeText || 'text-white'} ${cc.prizeShadow || ''} tracking-tight whitespace-nowrap shrink-0 leading-none`}>
-                  {prizeDisplay}
-                </span>
-                {hasSponsors && <SponsoredStar size={8} />}
-              </div>
+            <div className={`py-1.5 border-y ${cc.divider} leading-none ${isFreeTournament ? 'flex items-center' : 'grid grid-cols-2 gap-2'}`}>
+              {!isFreeTournament && (
+                /* Prize Value */
+                <div className="flex items-center gap-1 min-w-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={`${cc.prizeIcon || 'text-amber-400'} shrink-0`}>
+                    <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+                    <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+                    <path d="M4 22h16" />
+                    <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+                    <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+                    <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+                  </svg>
+                  <span className={`text-[10px] sm:text-[11px] font-black ${cc.prizeText || 'text-white'} ${cc.prizeShadow || ''} tracking-tight whitespace-nowrap shrink-0 leading-none`}>
+                    {prizeDisplay}
+                  </span>
+                  {hasSponsors && <SponsoredStar size={8} />}
+                </div>
+              )}
 
               {/* Entry Value */}
               <div className="flex items-center gap-1 min-w-0">
@@ -338,6 +340,7 @@ function InfoContent({
   prizePool,
   entryDisplay,
   entryFeeAmount,
+  isFreeTournament,
   orgName,
   orgTier,
   matchLabel,
@@ -369,14 +372,16 @@ function InfoContent({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 py-1 min-h-0 border-y border-outline-variant/15 leading-none">
-        <div className="flex flex-col min-w-0">
-          <span className="text-[9px] sm:text-[10px] font-semibold text-on-surface-variant uppercase flex items-center gap-1 leading-none tracking-wider opacity-85">
-            <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400 shrink-0"><circle cx="12" cy="8" r="6"/><path d="M8.21 13.89 7 23l5-3 5 3-1.21-9.12"/></svg>
-            PRIZE POOL
-          </span>
-          <span className="text-[11px] sm:text-xs font-black text-white mt-0.5 inline-block leading-none whitespace-nowrap">{prizePool ? formatCompactPrize(prizePool) : 'TBA'}</span>
-        </div>
+      <div className={`py-1 min-h-0 border-y border-outline-variant/15 leading-none ${isFreeTournament ? 'flex items-center' : 'grid grid-cols-2 gap-2'}`}>
+        {!isFreeTournament && (
+          <div className="flex flex-col min-w-0">
+            <span className="text-[9px] sm:text-[10px] font-semibold text-on-surface-variant uppercase flex items-center gap-1 leading-none tracking-wider opacity-85">
+              <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400 shrink-0"><circle cx="12" cy="8" r="6"/><path d="M8.21 13.89 7 23l5-3 5 3-1.21-9.12"/></svg>
+              PRIZE POOL
+            </span>
+            <span className="text-[11px] sm:text-xs font-black text-white mt-0.5 inline-block leading-none whitespace-nowrap">{prizePool ? formatCompactPrize(prizePool) : 'TBA'}</span>
+          </div>
+        )}
         <div className="flex flex-col min-w-0">
           <span className="text-[9px] sm:text-[10px] font-semibold text-on-surface-variant uppercase flex items-center gap-1 leading-none tracking-wider opacity-85">
             <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400 shrink-0"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>

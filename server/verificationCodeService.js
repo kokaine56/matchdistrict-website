@@ -12,6 +12,11 @@ import crypto from 'crypto';
  */
 export const CODE_CHARSET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 
+export function isValidVerificationCode(code) {
+  if (!code || typeof code !== 'string') return false;
+  return /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/.test(code);
+}
+
 export function generateVerificationCode() {
   const bytes = crypto.randomBytes(8);
   let code = '';

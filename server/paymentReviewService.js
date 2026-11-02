@@ -297,8 +297,9 @@ export async function listQueue(pool, user, options = {}) {
 
   if (tournamentId) {
     scopeParams.push(tournamentId);
-    scopeSql += ` AND r.tournament_id = $${scopeParams.length}`;
+    scopeSql += ` AND r.tournament_id = ${scopeParams.length}`;
   }
+  scopeSql += ' AND (t.is_free IS NOT TRUE AND COALESCE(t.entry_fee_amount, 0) > 0)';
 
   // 1. Single query for counts across all 4 tabs
   const countQuery = `
@@ -771,7 +772,7 @@ export async function approve(pool, user, { registrationId, tournamentId, note =
     const tidClause = tournamentId ? 'AND r.tournament_id = $2' : '';
     const tidParams = tournamentId ? [registrationId, tournamentId] : [registrationId];
     const regRes = await client.query(
-      `SELECT r.*, t.title AS tournament_title, t."orgId" AS tournament_org_id, t.org_id AS tournament_org_id_alt, t."slotsTotal"
+      `SELECT r.*, t.title AS tournament_title, t."orgId" AS tournament_org_id, t.org_id AS tournament_org_id_alt, t."slotsTotal", t.is_free, t.entry_fee_amount
        FROM tournament_registrations r
        JOIN tournaments t ON t.id = r.tournament_id
        WHERE r.id = $1 ${tidClause}
@@ -783,6 +784,10 @@ export async function approve(pool, user, { registrationId, tournamentId, note =
       return { statusCode: 404, success: false, error: 'NOT_FOUND', message: 'Registration not found.' };
     }
     const reg = regRes.rows[0];
+    if (reg.is_free || parseInt(reg.entry_fee_amount || 0) === 0) {
+      await client.query('ROLLBACK');
+      return { statusCode: 400, success: false, error: 'FREE_TOURNAMENT', message: 'This tournament is free. Payment review is not applicable.' };
+    }
     const actualTournamentId = reg.tournament_id;
 
     // 2. Lock payment_submissions row if exists

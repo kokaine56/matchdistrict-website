@@ -1154,6 +1154,7 @@ async function initDb() {
         ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_balance NUMERIC(10, 2) DEFAULT 0;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS early_access BOOLEAN DEFAULT FALSE;
         ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS "entryFee" VARCHAR(100);
+        ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS is_free BOOLEAN DEFAULT false;
         ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
         ALTER TABLE organiser_followers ADD COLUMN IF NOT EXISTS organiser_id VARCHAR(50);
         ALTER TABLE organiser_followers ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
@@ -1835,11 +1836,14 @@ function withTournamentDisplay(r) {
     hasApprovedSponsors,
     basePrize,
     totalPrize,
+    is_free: Boolean(r.is_free),
     prize: (() => {
+      if (r.is_free) return '';
       if (totalPrize > 0) return `\u20B9${totalPrize.toLocaleString('en-IN')}`;
       if (r.prize && r.prize !== 'TBD' && r.prize !== 'TBA') return r.prize;
       return 'TBD';
     })(),
+    entry: r.is_free ? 'Free' : (r.entry_fee_amount ? `₹${parseInt(r.entry_fee_amount)}` : (r.entry || 'Free')),
   };
   delete sanitized.roomID;
   delete sanitized.roomPassword;
@@ -8628,10 +8632,11 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           const numRooms = Math.ceil(adminSlotsTotal / maxSlotsPerRoom);
           const tournamentId = `TRN-${Date.now().toString(36).slice(-4)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
           const now = new Date();
-          const prizePoolAmount = parseInt(t.prize_pool_amount) || 0;
-          const entryFeeAmount = parseInt(t.entry_fee_amount) || 0;
-          const prizeDisplay = prizePoolAmount > 0 ? `₹${prizePoolAmount.toLocaleString('en-IN')}` : '';
-          const entryDisplay = entryFeeAmount > 0 ? `₹${entryFeeAmount}` : 'Free';
+          const isFree = Boolean(t.is_free);
+          const prizePoolAmount = isFree ? 0 : (parseInt(t.prize_pool_amount) || 0);
+          const entryFeeAmount = isFree ? 0 : (parseInt(t.entry_fee_amount) || 0);
+          const prizeDisplay = isFree ? '' : (prizePoolAmount > 0 ? `₹${prizePoolAmount.toLocaleString('en-IN')}` : '');
+          const entryDisplay = isFree ? 'Free' : (entryFeeAmount > 0 ? `₹${entryFeeAmount}` : 'Free');
           const regOpen = t.registrationOpenDate || now.toISOString().slice(0, 16);
           const regClose = t.registrationCloseDate || new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
           const startDate = t.startDate || new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
@@ -8786,6 +8791,13 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
         }
 
         const dbRes = await pool.query(
+          const isFree = Boolean(t.is_free);
+          const orgEntryFee = isFree ? 0 : (t.entry_fee_amount !== undefined ? parseInt(t.entry_fee_amount) : 0);
+          const orgPrizeAmount = isFree ? 0 : (t.prize_pool_amount !== undefined ? parseInt(t.prize_pool_amount) : 0);
+          const orgPrize = isFree ? '' : (t.prize || '');
+          const orgEntry = isFree ? 'Free' : (t.entry || 'Free');
+
+          const dbRes = await pool.query(
           `INSERT INTO tournaments (
             id, title, game, status, "badgeBg", "badgeText", date, prize, entry, "teamsCount", featured, "orgName",
             "orgLogo", "orgHandle", "orgMotto",
@@ -8794,9 +8806,9 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
             match_type, perspective, reserved_slots, entry_fee_amount, prize_pool_type, prize_pool_amount,
             prize_split_1st, prize_split_2nd, prize_split_3rd, prize_split_mvp, description, cover_image_url, lobby_start_time,
             mvp_enabled, mvp_amount, kill_reward_enabled, kill_reward_per_kill, prize_positions, sponsors_enabled, max_slots_per_room,
-            unique_amount_suffix_enabled, card_color, rounds_published, teams_per_group, teams_per_match, roadmap_image_url
+            unique_amount_suffix_enabled, card_color, rounds_published, teams_per_group, teams_per_match, roadmap_image_url, is_free
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31,
-            $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60)
+            $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61)
           ON CONFLICT (id) DO UPDATE SET
             status = COALESCE(EXCLUDED.status, tournaments.status),
             "isDraft" = COALESCE(EXCLUDED."isDraft", tournaments."isDraft"),
@@ -8820,7 +8832,8 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
             rounds_published = COALESCE(EXCLUDED.rounds_published, tournaments.rounds_published),
             teams_per_group = COALESCE(EXCLUDED.teams_per_group, tournaments.teams_per_group),
             teams_per_match = COALESCE(EXCLUDED.teams_per_match, tournaments.teams_per_match),
-            roadmap_image_url = COALESCE(EXCLUDED.roadmap_image_url, tournaments.roadmap_image_url)
+            roadmap_image_url = COALESCE(EXCLUDED.roadmap_image_url, tournaments.roadmap_image_url),
+            is_free = COALESCE(EXCLUDED.is_free, tournaments.is_free)
           RETURNING *`,
           [
             t.id || `TRN-${Date.now().toString(36).slice(-4)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
@@ -8830,8 +8843,8 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
             t.badgeBg || (t.status === 'live' ? 'bg-error' : 'bg-primary'),
             t.badgeText || (t.status === 'live' ? 'LIVE NOW' : 'UPCOMING'),
             t.date || '',
-            t.prize || '',
-            t.entry || '',
+            orgPrize,
+            orgEntry,
             t.teamsCount || '',
             false, // `featured` is never client-settable; promotion is admin-managed via tournament_promotions
             orgName,
@@ -8860,29 +8873,30 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
             t.match_type || 'squad',
             t.perspective || 'tpp',
             t.reserved_slots !== undefined ? parseInt(t.reserved_slots) : 0,
-            t.entry_fee_amount !== undefined ? parseInt(t.entry_fee_amount) : 0,
+            orgEntryFee,
             t.prize_pool_type || 'fixed',
-            t.prize_pool_amount !== undefined ? parseInt(t.prize_pool_amount) : 0,
-            t.prize_split_1st || '',
-            t.prize_split_2nd || '',
-            t.prize_split_3rd || '',
-            t.prize_split_mvp || '',
+            orgPrizeAmount,
+            isFree ? '' : (t.prize_split_1st || ''),
+            isFree ? '' : (t.prize_split_2nd || ''),
+            isFree ? '' : (t.prize_split_3rd || ''),
+            isFree ? '' : (t.prize_split_mvp || ''),
             t.description || '',
             t.cover_image_url || '',
             t.lobby_start_time || '',
-            t.mvp_enabled || false,
-            t.mvp_amount !== undefined ? parseInt(t.mvp_amount) : 0,
-            t.kill_reward_enabled || false,
-            t.kill_reward_per_kill !== undefined ? parseInt(t.kill_reward_per_kill) : 0,
-            t.prize_positions || '[]',
-            t.sponsors_enabled !== undefined ? t.sponsors_enabled : false,
+            isFree ? false : (t.mvp_enabled || false),
+            isFree ? 0 : (t.mvp_amount !== undefined ? parseInt(t.mvp_amount) : 0),
+            isFree ? false : (t.kill_reward_enabled || false),
+            isFree ? 0 : (t.kill_reward_per_kill !== undefined ? parseInt(t.kill_reward_per_kill) : 0),
+            isFree ? '[]' : (t.prize_positions || '[]'),
+            isFree ? false : (t.sponsors_enabled !== undefined ? t.sponsors_enabled : false),
             t.max_slots_per_room !== undefined && t.max_slots_per_room !== null && t.max_slots_per_room !== '' ? parseInt(t.max_slots_per_room) : null,
             t.unique_amount_suffix_enabled || false,
             t.card_color || 'white',
             coerceBool(t.rounds_published, true),
             orgTeamsPerGroup,
             t.teams_per_match ? parseInt(t.teams_per_match) : 16,
-            sanitizeImageUrlForDb(t.roadmap_image_url) || ''
+            sanitizeImageUrlForDb(t.roadmap_image_url) || '',
+            isFree
           ]
         );
         console.log(`\r\n📦 [MATCH DISTRICT DB] Tournament "${t.id}" created in Supabase PostgreSQL.\r\n`);
@@ -14631,7 +14645,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
         }
 
         const entryFeeAmount = parseInt(tournament.entry_fee_amount) || 0;
-        const isPaid = entryFeeAmount > 0;
+        const isPaid = !tournament.is_free && entryFeeAmount > 0;
 
         const normPaymentApp = normalizePaymentApp(payload?.payment_app);
         if (isPaid && (
@@ -14991,7 +15005,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           await regClient.query('BEGIN');
 
           // Transaction row-lock on tournament row (PAY-004 concurrency control)
-          const tRes = await regClient.query('SELECT "slotsTotal", "slotsFilled", "entry_fee_amount", "registrationCloseDate", unique_amount_suffix_enabled FROM tournaments WHERE id = $1::varchar FOR UPDATE', [id]);
+          const tRes = await regClient.query('SELECT "slotsTotal", "slotsFilled", "entry_fee_amount", "registrationCloseDate", unique_amount_suffix_enabled, is_free FROM tournaments WHERE id = $1::varchar FOR UPDATE', [id]);
           if (tRes.rows.length === 0) {
             await regClient.query('ROLLBACK');
             res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -15011,8 +15025,8 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           }
 
           entryFeeAmount = parseInt(t.entry_fee_amount) || 0;
-          isPaid = entryFeeAmount > 0;
-          amountToPay = entryFeeAmount;
+          isPaid = !t.is_free && entryFeeAmount > 0;
+          amountToPay = isPaid ? entryFeeAmount : 0;
 
           if (isPaid && t.unique_amount_suffix_enabled) {
             const suffix = Math.floor(Math.random() * UNIQUE_AMOUNT_SUFFIX_RANGE) + 1;
@@ -15039,7 +15053,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
             return;
           }
 
-          let status = isPaid ? 'pending_payment' : 'pending';
+          let status = isPaid ? 'pending_payment' : 'approved';
 
           let slotNumber = data.slot_number ? parseInt(data.slot_number) : null;
           if (slotNumber) {
@@ -15091,7 +15105,26 @@ function validateTournamentSocialUrl(platform, rawUrl) {
             );
           }
 
+          let assignedCode = null;
+          if (!isPaid) {
+            try {
+              assignedCode = await assignVerificationCode(regClient, regId);
+            } catch (codeErr) {
+              console.warn('[Register] assignVerificationCode error:', codeErr.message);
+            }
+            try {
+              await ensureTeamForRegistration(regClient, id, authUser.id, data.team_name);
+            } catch (bridgeErr) {
+              console.warn('[Register] ensureTeamForRegistration non-fatal:', bridgeErr.message);
+            }
+          }
+
           await regClient.query('COMMIT');
+
+          if (assignedCode && dbRes?.rows?.[0]) {
+            dbRes.rows[0].discord_verification_code = assignedCode;
+            dbRes.rows[0].discord_verification_status = 'pending';
+          }
         } catch (txnErr) {
           await regClient.query('ROLLBACK');
           throw txnErr;
@@ -15134,7 +15167,13 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           return;
         }
 
-        const regRes = await pool.query('SELECT * FROM tournament_registrations WHERE id = $1::varchar AND tournament_id = $2::varchar', [regId, tournamentId]);
+        const regRes = await pool.query(
+          `SELECT r.*, t.is_free, t.entry_fee_amount
+           FROM tournament_registrations r
+           JOIN tournaments t ON t.id = r.tournament_id
+           WHERE r.id = $1::varchar AND r.tournament_id = $2::varchar`,
+          [regId, tournamentId]
+        );
         if (regRes.rows.length === 0) {
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'NOT_FOUND', message: 'Registration not found.' }));
@@ -15142,6 +15181,11 @@ function validateTournamentSocialUrl(platform, rawUrl) {
         }
 
         const reg = regRes.rows[0];
+        if (reg.is_free || parseInt(reg.entry_fee_amount || 0) === 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'FREE_TOURNAMENT', message: 'This tournament is free. Payment verification is not required.' }));
+          return;
+        }
         if (reg.user_id !== authUser.id) {
           res.writeHead(403, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'FORBIDDEN', message: 'This registration does not belong to you.' }));
@@ -15213,7 +15257,13 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           }
         }
 
-        const regRes = await pool.query('SELECT * FROM tournament_registrations WHERE id = $1::varchar AND tournament_id = $2::varchar', [regId, tournamentId]);
+        const regRes = await pool.query(
+          `SELECT r.*, t.is_free, t.entry_fee_amount
+           FROM tournament_registrations r
+           JOIN tournaments t ON t.id = r.tournament_id
+           WHERE r.id = $1::varchar AND r.tournament_id = $2::varchar`,
+          [regId, tournamentId]
+        );
         if (regRes.rows.length === 0) {
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'NOT_FOUND', message: 'Registration not found.' }));
@@ -15221,6 +15271,11 @@ function validateTournamentSocialUrl(platform, rawUrl) {
         }
 
         const reg = regRes.rows[0];
+        if (reg.is_free || parseInt(reg.entry_fee_amount || 0) === 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'FREE_TOURNAMENT', message: 'This tournament is free. Payment submission is not required.' }));
+          return;
+        }
         if (reg.user_id !== authUser.id) {
           res.writeHead(403, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'FORBIDDEN', message: 'This registration does not belong to you.' }));

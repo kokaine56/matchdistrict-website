@@ -139,8 +139,8 @@ export default function Step9Publish({ data, userTier, isSubmitting, uploadingMe
               <p className="text-sm font-mono text-on-background font-medium mt-1">{published.id}</p>
             </div>
             <div>
-              <p className="text-[10px] text-on-surface-variant uppercase tracking-wider font-medium">Prize Pool</p>
-              <p className="text-sm font-bold text-secondary mt-1">₹{totalPrizePool.toLocaleString('en-IN')}</p>
+              <p className="text-[10px] text-on-surface-variant uppercase tracking-wider font-medium">{data.is_free ? 'Entry Fee' : 'Prize Pool'}</p>
+              <p className={`text-sm font-bold mt-1 ${data.is_free ? 'text-primary' : 'text-secondary'}`}>{data.is_free ? 'Free' : `₹${totalPrizePool.toLocaleString('en-IN')}`}</p>
             </div>
             <div>
               <p className="text-[10px] text-on-surface-variant uppercase tracking-wider font-medium">Slots</p>
@@ -262,8 +262,8 @@ export default function Step9Publish({ data, userTier, isSubmitting, uploadingMe
             <p className="text-sm font-medium text-on-background mt-0.5">{data.game || '—'}</p>
           </div>
           <div>
-            <p className="text-[10px] text-on-surface-variant uppercase tracking-wider">Prize Pool</p>
-            <p className="text-sm font-bold text-secondary mt-0.5">₹{totalPrizePool.toLocaleString('en-IN')}</p>
+            <p className="text-[10px] text-on-surface-variant uppercase tracking-wider">{data.is_free ? 'Entry Fee' : 'Prize Pool'}</p>
+            <p className={`text-sm font-bold mt-0.5 ${data.is_free ? 'text-primary' : 'text-secondary'}`}>{data.is_free ? 'Free' : `₹${totalPrizePool.toLocaleString('en-IN')}`}</p>
           </div>
           <div>
             <p className="text-[10px] text-on-surface-variant uppercase tracking-wider">Slots</p>

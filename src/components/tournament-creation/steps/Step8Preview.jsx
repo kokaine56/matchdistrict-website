@@ -53,8 +53,8 @@ export default function Step8Preview({ data, orgName, orgTier }) {
               badgeTextColor="text-white"
               imgSrc={data.cover_image_url || ''}
               imgAlt={data.title || 'Tournament cover'}
-              prizePool={totalPrizePool > 0 ? `₹${totalPrizePool.toLocaleString('en-IN')}` : 'TBD'}
-              entryFee={entryFee > 0 ? `₹${entryFee.toLocaleString('en-IN')}` : 'Free'}
+              prizePool={data.is_free ? '' : (totalPrizePool > 0 ? `₹${totalPrizePool.toLocaleString('en-IN')}` : 'TBD')}
+              entryFee={data.is_free ? 'Free' : (entryFee > 0 ? `₹${entryFee.toLocaleString('en-IN')}` : 'Free')}
               matchType={matchLabel}
               perspective={perspLabel}
               orgName={orgName}
@@ -62,7 +62,8 @@ export default function Step8Preview({ data, orgName, orgTier }) {
               slotsTotal={data.slotsTotal}
               slotsFilled={0}
               entryFeeAmount={data.is_free ? 0 : entryFee}
-              is_free={data.is_free}
+              is_free={Boolean(data.is_free)}
+              isFree={Boolean(data.is_free)}
               isPreview={true}
               buttonText="JOIN NOW"
               onNavigate={() => {}}
