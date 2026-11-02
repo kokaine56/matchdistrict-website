@@ -712,65 +712,76 @@ function RegistrationPage({ onNavigate }) {
         members: allMembers,
       }
 
-      // Create a registration session (validates form, checks dupes, but NO DB registration yet)
-      const sessionHeaders = { 'Content-Type': 'application/json' }
-      if (token) sessionHeaders['Authorization'] = `Bearer ${token}`
-      const sessionRes = await fetch(`/api/sessions/create/${id}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: sessionHeaders,
-        body: JSON.stringify(formPayload),
-      })
-      const sessionData = await sessionRes.json()
-      if (sessionData.already_registered) {
-        setRegisteredTeam(sessionData.registration)
-        setStep('success')
-        return
-      }
-      if (!sessionData.success) {
-        const raw = sessionData.message || sessionData.error || ''
-        const isSql = /relation|column|syntax error|violates|does not exist|select|update|insert/i.test(raw)
-        const refStr = sessionData.ref ? ` (Ref: ${sessionData.ref})` : ''
-        setServerError(isSql ? `Could not save, please try again.${refStr}` : `${raw || 'Registration failed. Please try again.'}${refStr}`)
-        return
-      }
-
-      const newSessionId = sessionData.session?.id
-      setSessionId(newSessionId)
-
       if (isPaid) {
-        // Paid tournament: go to payment step (no DB write yet)
-        setStep('payment')
-      } else {
-        // Free tournament: complete registration immediately via session
-        const completeHeaders = { 'Content-Type': 'application/json' }
-        if (token) completeHeaders['Authorization'] = `Bearer ${token}`
-        const completeRes = await fetch(`/api/sessions/${newSessionId}/complete`, {
+        // Paid tournament: create a registration session, then go to payment step (no DB write yet)
+        const sessionHeaders = { 'Content-Type': 'application/json' }
+        if (token) sessionHeaders['Authorization'] = `Bearer ${token}`
+        const sessionRes = await fetch(`/api/sessions/create/${id}`, {
           method: 'POST',
           credentials: 'include',
-          headers: completeHeaders,
-          body: JSON.stringify({}),
+          headers: sessionHeaders,
+          body: JSON.stringify(formPayload),
         })
-        const completeData = await completeRes.json()
-        if (completeData.already_registered) {
-          setRegisteredTeam(completeData.registration)
+        let sessionData
+        try {
+          sessionData = await sessionRes.json()
+        } catch (e) {
+          throw new Error('Server returned an invalid response. Please try again.')
+        }
+        if (sessionData.already_registered) {
+          setRegisteredTeam(sessionData.registration)
           setStep('success')
           return
         }
-        if (completeData.success) {
-          setRegisteredTeam(completeData.registration)
-          setAmountToPay(completeData.amount_to_pay || null)
-          setPredictedGroup(completeData.predicted_group || null)
+        if (!sessionRes.ok || !sessionData.success) {
+          const raw = sessionData?.message || sessionData?.error || ''
+          const isSql = /relation|column|syntax error|violates|does not exist|select|update|insert/i.test(raw)
+          const refStr = sessionData?.ref ? ` (Ref: ${sessionData.ref})` : ''
+          setServerError(isSql ? `Could not save, please try again.${refStr}` : `${raw || 'Registration failed. Please try again.'}${refStr}`)
+          return
+        }
+
+        const newSessionId = sessionData.session?.id
+        setSessionId(newSessionId)
+        setStep('payment')
+      } else {
+        // Free tournament: completely bypass payment sessions and register directly
+        const regHeaders = { 'Content-Type': 'application/json' }
+        if (token) regHeaders['Authorization'] = `Bearer ${token}`
+        const regRes = await fetch(`/api/tournaments/${id}/register`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: regHeaders,
+          body: JSON.stringify(formPayload),
+        })
+        let regData
+        try {
+          regData = await regRes.json()
+        } catch (e) {
+          throw new Error('Server returned an invalid response. Please try again.')
+        }
+
+        if (regData.already_registered) {
+          setRegisteredTeam(regData.registration)
+          setStep('success')
+          return
+        }
+
+        if (regRes.ok && regData.success) {
+          setRegisteredTeam(regData.registration)
+          setAmountToPay(regData.amount_to_pay || null)
+          setPredictedGroup(regData.predicted_group || null)
           setStep('success')
         } else {
-          const raw = completeData.message || completeData.error || ''
+          const raw = regData?.message || regData?.error || ''
           const isSql = /relation|column|syntax error|violates|does not exist|select|update|insert/i.test(raw)
-          const refStr = completeData.ref ? ` (Ref: ${completeData.ref})` : ''
-          setServerError(isSql ? `Could not save, please try again.${refStr}` : `${raw || 'Could not save, please try again.'}${refStr}`)
+          const refStr = regData?.ref ? ` (Ref: ${regData.ref})` : ''
+          setServerError(isSql ? `Could not save, please try again.${refStr}` : `${raw || 'Registration failed. Please try again.'}${refStr}`)
         }
       }
     } catch (err) {
-      setServerError('Network error. Please try again.')
+      console.error('Registration submission error:', err)
+      setServerError(err.message || 'Registration failed. Please check your network connection and try again.')
     } finally {
       setIsSubmitting(false)
     }

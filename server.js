@@ -8651,10 +8651,10 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
               match_type, perspective, reserved_slots, entry_fee_amount, prize_pool_type, prize_pool_amount,
               prize_split_1st, prize_split_2nd, prize_split_3rd, prize_split_mvp, description, cover_image_url,
               lobby_start_time, mvp_enabled, mvp_amount, kill_reward_enabled, kill_reward_per_kill, prize_positions,
-              sponsors_enabled, max_slots_per_room, card_color, rounds_published, teams_per_group, teams_per_match, roadmap_image_url
+              sponsors_enabled, max_slots_per_room, card_color, rounds_published, teams_per_group, teams_per_match, roadmap_image_url, is_free
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
               $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
-              $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59)
+              $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60)
             RETURNING *`,
             [
               tournamentId, t.title, t.game, 'upcoming', 'bg-primary', 'UPCOMING', now.toISOString(),
@@ -8673,7 +8673,8 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
               t.kill_reward_enabled || false, t.kill_reward_per_kill ? parseInt(t.kill_reward_per_kill) : 0,
               t.prize_positions || '[]', t.sponsors_enabled || false, maxSlotsPerRoom,
               t.card_color || 'white', coerceBool(t.rounds_published, true),
-              adminTeamsPerGroup, t.teams_per_match ? parseInt(t.teams_per_match) : 16, sanitizeImageUrlForDb(t.roadmap_image_url) || ''
+              adminTeamsPerGroup, t.teams_per_match ? parseInt(t.teams_per_match) : 16, sanitizeImageUrlForDb(t.roadmap_image_url) || '',
+              isFree
             ]
           );
           const createdTournament = dbRes.rows[0];
@@ -9465,8 +9466,9 @@ function validateTournamentSocialUrl(platform, rawUrl) {
               rounds_published = COALESCE($51, rounds_published),
               teams_per_group = COALESCE($52, teams_per_group),
           teams_per_match = COALESCE($53, teams_per_match),
-              roadmap_image_url = COALESCE($54, roadmap_image_url)
-            WHERE id = $55 RETURNING *`,
+              roadmap_image_url = COALESCE($54, roadmap_image_url),
+              is_free = COALESCE($55, is_free)
+            WHERE id = $56 RETURNING *`,
             [
               t.title || null,
               t.game || null,
@@ -9522,6 +9524,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
               t.teams_per_group !== undefined ? normalizeTeamsPerGroup(t.teams_per_group, 16) : null,
       t.teams_per_match !== undefined ? parseInt(t.teams_per_match) : null,
               t.roadmap_image_url !== undefined ? sanitizeImageUrlForDb(t.roadmap_image_url) : null,
+              t.is_free !== undefined ? Boolean(t.is_free) : null,
               id
             ]
             );
@@ -9765,8 +9768,9 @@ function validateTournamentSocialUrl(platform, rawUrl) {
             rounds_published = COALESCE($55, rounds_published),
             teams_per_group = COALESCE($56, teams_per_group),
             teams_per_match = COALESCE($57, teams_per_match),
-            roadmap_image_url = COALESCE($58, roadmap_image_url)
-           WHERE id = $59 RETURNING *`,
+            roadmap_image_url = COALESCE($58, roadmap_image_url),
+            is_free = COALESCE($59, is_free)
+           WHERE id = $60 RETURNING *`,
           [
             t.title !== undefined ? t.title : null,
             t.game !== undefined ? t.game : null,
@@ -9826,6 +9830,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
             orgTeamsPerGroup,
             t.teams_per_match !== undefined ? parseInt(t.teams_per_match) : null,
             t.roadmap_image_url !== undefined ? sanitizeImageUrlForDb(t.roadmap_image_url) : null,
+            t.is_free !== undefined ? Boolean(t.is_free) : null,
             id
           ]
           );
@@ -14282,7 +14287,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
 
         // Check tournament exists and is open
         const tRes = await pool.query(
-          'SELECT t.id, t.title, t.status, t."slotsTotal", COALESCE(rc.slots_filled, 0) AS "slotsFilled", t.entry_fee_amount, t."registrationCloseDate" FROM tournaments t LEFT JOIN registered_tournament_team_counts rc ON rc.tournament_id = t.id WHERE t.id = $1',
+          'SELECT t.id, t.title, t.status, t."slotsTotal", COALESCE(rc.slots_filled, 0) AS "slotsFilled", t.entry_fee_amount, t."registrationCloseDate", t.is_free FROM tournaments t LEFT JOIN registered_tournament_team_counts rc ON rc.tournament_id = t.id WHERE t.id = $1',
           [tournamentId]
         );
         if (tRes.rows.length === 0) {
@@ -14332,8 +14337,9 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           const currentStatus = (existingReg.status || '').toLowerCase();
           const reRegisterable = ['cancelled', 'expired', 'rejected', 'payment_rejected'];
           if (!reRegisterable.includes(currentStatus)) {
+            const isConfirmedOrApproved = ['approved', 'confirmed', 'verified_by_host'].includes(currentStatus);
             const hasPayment = Boolean(existingReg.payment_id || existingReg.proof_url || existingReg.screenshot_url || existingReg.transaction_id);
-            if (hasPayment) {
+            if (isConfirmedOrApproved || hasPayment) {
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({
                 success: true,
@@ -14396,8 +14402,8 @@ function validateTournamentSocialUrl(platform, rawUrl) {
             id: sessionId,
             tournament_id: tournamentId,
             expires_at: expiresAt,
-            requiresPayment: entryFeeAmount > 0,
-            entry_fee_amount: entryFeeAmount
+            requiresPayment: !tournament.is_free && entryFeeAmount > 0,
+            entry_fee_amount: !tournament.is_free ? entryFeeAmount : 0
           }
         }));
       } catch (err) {
@@ -14613,7 +14619,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
 
         // Verify tournament is still open
         const tRes = await client.query(
-          'SELECT t.id, t.title, t."slotsTotal", COALESCE(rc.slots_filled, 0) AS "slotsFilled", t.entry_fee_amount, t."registrationCloseDate", t.teams_per_group, t.unique_amount_suffix_enabled FROM tournaments t LEFT JOIN registered_tournament_team_counts rc ON rc.tournament_id = t.id WHERE t.id = $1::varchar',
+          'SELECT t.id, t.title, t."slotsTotal", COALESCE(rc.slots_filled, 0) AS "slotsFilled", t.entry_fee_amount, t."registrationCloseDate", t.teams_per_group, t.unique_amount_suffix_enabled, t.is_free, t.discord_invite_url, t.discord_invite FROM tournaments t LEFT JOIN registered_tournament_team_counts rc ON rc.tournament_id = t.id WHERE t.id = $1::varchar',
           [session.tournament_id]
         );
         if (tRes.rows.length === 0) {
@@ -14728,9 +14734,10 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           const reRegisterable = ['cancelled', 'expired', 'rejected', 'payment_rejected'];
           const currentStatus = (existing.status || '').toLowerCase();
           const hasPayment = Boolean(existing.payment_id || existing.proof_url || existing.screenshot_url || existing.transaction_id);
+          const isConfirmedOrApproved = ['approved', 'confirmed', 'verified_by_host'].includes(currentStatus);
 
           if (!reRegisterable.includes(currentStatus)) {
-            if (hasPayment) {
+            if (isConfirmedOrApproved || hasPayment) {
               await client.query('ROLLBACK');
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({
@@ -14978,8 +14985,9 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           const currentStatus = (existing.status || '').toLowerCase();
           const reRegisterable = ['cancelled', 'expired', 'rejected', 'payment_rejected'];
           if (!reRegisterable.includes(currentStatus)) {
+            const isConfirmedOrApproved = ['approved', 'confirmed', 'verified_by_host'].includes(currentStatus);
             const hasPayment = Boolean(existing.payment_id || existing.proof_url || existing.screenshot_url || existing.transaction_id);
-            if (hasPayment) {
+            if (isConfirmedOrApproved || hasPayment) {
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({
                 success: true,
@@ -15004,7 +15012,10 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           await regClient.query('BEGIN');
 
           // Transaction row-lock on tournament row (PAY-004 concurrency control)
-          const tRes = await regClient.query('SELECT "slotsTotal", "slotsFilled", "entry_fee_amount", "registrationCloseDate", unique_amount_suffix_enabled, is_free FROM tournaments WHERE id = $1::varchar FOR UPDATE', [id]);
+          const tRes = await regClient.query(
+            'SELECT title, "slotsTotal", "slotsFilled", "entry_fee_amount", "registrationCloseDate", unique_amount_suffix_enabled, is_free, teams_per_group, discord_invite_url, discord_invite FROM tournaments WHERE id = $1::varchar FOR UPDATE',
+            [id]
+          );
           if (tRes.rows.length === 0) {
             await regClient.query('ROLLBACK');
             res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -15013,6 +15024,22 @@ function validateTournamentSocialUrl(platform, rawUrl) {
             return;
           }
           const t = tRes.rows[0];
+
+          // Check duplicate team name (exclude current orphan if retrying)
+          let nameQuery = 'SELECT id FROM tournament_registrations WHERE tournament_id = $1 AND LOWER(team_name) = LOWER($2) AND status NOT IN (\'cancelled\', \'expired\', \'rejected\', \'PAYMENT_REJECTED\')';
+          const nameParams = [id, data.team_name.trim()];
+          if (existingOrphanId) {
+            nameQuery += ' AND id != $3';
+            nameParams.push(existingOrphanId);
+          }
+          const nameRes = await regClient.query(nameQuery, nameParams);
+          if (nameRes.rows.length > 0) {
+            await regClient.query('ROLLBACK');
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'TEAM_NAME_TAKEN', message: 'This team name is already registered.' }));
+            regClient.release();
+            return;
+          }
 
           // Check if registration window has closed
           if (t.registrationCloseDate && new Date(t.registrationCloseDate) < new Date()) {
@@ -15069,7 +15096,8 @@ function validateTournamentSocialUrl(platform, rawUrl) {
             }
           }
 
-          const regId = 'REG-' + Date.now().toString().slice(-6);
+          const regId = 'REG-' + Date.now().toString().slice(-6) + '-' + crypto.randomBytes(4).toString('hex');
+          const targetRegId = existingOrphanId || regId;
           const membersStr = data.members ? (typeof data.members === 'string' ? data.members : JSON.stringify(data.members)) : '[]';
           const idempotencyKey = data.idempotency_key || null;
 
@@ -15100,14 +15128,14 @@ function validateTournamentSocialUrl(platform, rawUrl) {
             dbRes = await regClient.query(
               `INSERT INTO tournament_registrations (id, tournament_id, user_id, team_name, captain, captain_uid, members, status, slot_number, email, phone, idempotency_key, version, amount_due)
                VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::varchar, $7::text, $8::varchar, $9::int, $10::varchar, $11::varchar, $12::varchar, 1, $13::numeric) RETURNING *`,
-              [regId, id, authUser.id, data.team_name, data.captain, data.captain_uid || null, membersStr, status, slotNumber, data.email || null, data.phone || null, idempotencyKey, assignedAmountDue]
+              [targetRegId, id, authUser.id, data.team_name, data.captain, data.captain_uid || null, membersStr, status, slotNumber, data.email || null, data.phone || null, idempotencyKey, assignedAmountDue]
             );
           }
 
           let assignedCode = null;
           if (!isPaid) {
             try {
-              assignedCode = await assignVerificationCode(regClient, regId);
+              assignedCode = await assignVerificationCode(regClient, targetRegId);
             } catch (codeErr) {
               console.warn('[Register] assignVerificationCode error:', codeErr.message);
             }
@@ -15133,9 +15161,31 @@ function validateTournamentSocialUrl(platform, rawUrl) {
 
         await reconcileTournamentSlots(pool, id);
 
+        const tpgPredicted = normalizeTeamsPerGroup(t.teams_per_group, 16);
+        const confirmedCountRes = await pool.query(
+          `SELECT COUNT(*) FROM tournament_registrations
+           WHERE tournament_id = $1::varchar AND status IN ('approved', 'confirmed', 'VERIFIED_BY_HOST', 'verified_by_host')`,
+          [id]
+        );
+        const confirmedCount = parseInt(confirmedCountRes.rows[0]?.count) || 0;
+        const predictedGroup = predictedGroupFor(confirmedCount, t.slotsTotal, tpgPredicted);
+
+        const returnReg = dbRes?.rows?.[0] ? { ...dbRes.rows[0] } : {};
+        if (assignedCode) {
+          returnReg.discord_verification_code = assignedCode;
+          returnReg.discord_verification_status = 'pending';
+        }
+
         console.log(`\r\n📦 [MATCH DISTRICT DB] Team "${data.team_name}" registered for "${id}" with status "${status}" and entry fee ${entryFeeAmount} in Supabase.\r\n`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, registration: dbRes.rows[0], requiresPayment: isPaid, amount_to_pay: isPaid ? amountToPay : null }));
+        res.end(JSON.stringify({
+          success: true,
+          registration: returnReg,
+          requiresPayment: isPaid,
+          amount_to_pay: isPaid ? amountToPay : null,
+          predicted_group: predictedGroup,
+          discord_invite_url: t.discord_invite_url || t.discord_invite || null
+        }));
       } catch (err) {
         const ref = makeErrorRef();
         logErrorWithRef(ref, 'POST /api/tournaments/:id/register', err, 'register_team');
