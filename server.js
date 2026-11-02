@@ -8790,7 +8790,6 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           return;
         }
 
-        const dbRes = await pool.query(
           const isFree = Boolean(t.is_free);
           const orgEntryFee = isFree ? 0 : (t.entry_fee_amount !== undefined ? parseInt(t.entry_fee_amount) : 0);
           const orgPrizeAmount = isFree ? 0 : (t.prize_pool_amount !== undefined ? parseInt(t.prize_pool_amount) : 0);
