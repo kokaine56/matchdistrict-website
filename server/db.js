@@ -55,8 +55,21 @@ export function createDatabasePool() {
   }
 
   const { Pool } = pg;
-  return new Pool({
+  const pool = new Pool({
     connectionString: connectionUrl.toString(),
     ssl: sslConfig,
+    max: parseInt(process.env.DB_POOL_MAX || '10', 10),
+    min: 2,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000, // 10s timeout to prevent hanging on connection acquisition
+    statement_timeout: 30000,       // 30s query timeout so queries never hang indefinitely
+    query_timeout: 30000,
   });
+
+  // Critical: handle idle client errors so unexpected connection drops by Supabase pooler / router do not crash Node.js
+  pool.on('error', (err) => {
+    console.error('⚠️ [PG POOL ERROR] Unexpected idle client error:', err?.message || err);
+  });
+
+  return pool;
 }
