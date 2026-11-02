@@ -265,12 +265,6 @@ function TournamentDetail({ onNavigate, tournamentId }) {
   const [countdown, setCountdown] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, label: '', active: false, type: '' });
   const [activeTab, setActiveTab] = useState('overview');
 
-  useEffect(() => {
-    if (isFreeTournament && activeTab === 'prize') {
-      setActiveTab('overview');
-    }
-  }, [isFreeTournament, activeTab]);
-
   const [openRule, setOpenRule] = useState(null);
 
   const [currentUser] = useCurrentUser();
@@ -442,6 +436,17 @@ function TournamentDetail({ onNavigate, tournamentId }) {
     });
   }, []);
   const tourney = useMemo(() => normalizeTournamentRow(tournamentRow), [tournamentRow]);
+  const isFreeTournament = Boolean(
+    tourney?.is_free === true ||
+    tourney?.isFree === true ||
+    (tourney && Number(tourney.entry_fee_amount || 0) === 0 && Number(tourney.prize_pool_amount || 0) === 0)
+  );
+
+  useEffect(() => {
+    if (isFreeTournament && activeTab === 'prize') {
+      setActiveTab('overview');
+    }
+  }, [isFreeTournament, activeTab]);
   const isTournamentOwner = useMemo(
     () => isTournamentOrganizer(currentUser, tourney),
     [currentUser, tourney]
@@ -885,11 +890,11 @@ function TournamentDetail({ onNavigate, tournamentId }) {
   };
 
   const entryFee = parseInt(tourney?.entry_fee_amount, 10) || 0;
-  const entryDisplay = entryFee === 0 ? 'Free' : formatIndianCurrency(entryFee);
+  const entryDisplay = isFreeTournament ? 'Free' : (entryFee === 0 ? 'Free' : formatIndianCurrency(entryFee));
   const basePrize = parseInt(tourney?.prize_pool_amount || tourney?.basePrize || tourney?.prizePool || 0, 10) || 0;
   const totalPrize = basePrize;
   const sponsoredAmount = 0;
-  const prizeDisplay = totalPrize > 0 ? `₹${totalPrize.toLocaleString('en-IN')}` : (tourney?.prizePool ? formatIndianCurrency(tourney.prizePool) : 'TBA');
+  const prizeDisplay = isFreeTournament ? '' : (totalPrize > 0 ? `₹${totalPrize.toLocaleString('en-IN')}` : (tourney?.prizePool ? formatIndianCurrency(tourney.prizePool) : 'TBA'));
   const discordInvite = getValidDiscordInvite(
     tourney?.social_links?.discord,
     tourney?.discord_invite_url,
@@ -921,7 +926,7 @@ function TournamentDetail({ onNavigate, tournamentId }) {
 
   // Generate prize distribution split lists against total prize (base + sponsored)
   const prizeDistributions = useMemo(() => {
-    if (!tourney) return [];
+    if (!tourney || isFreeTournament) return [];
     const list = [];
     const pool = totalPrize || parseInt(tourney.prize_pool_amount || tourney.prizePool || tourney.prize, 10) || 0;
 
@@ -1654,7 +1659,7 @@ function TournamentDetail({ onNavigate, tournamentId }) {
                 />
               </div>
             )}
-            {activeTab === 'prize' && (
+            {activeTab === 'prize' && !isFreeTournament && (
               isGoldTheme ? (
                 <div className="flex flex-col gap-4 w-full max-w-2xl select-none">
                   {/* Sleek Royal Gold Prize Distribution Board */}
