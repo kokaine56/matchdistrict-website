@@ -532,7 +532,7 @@ function loadEnv() {
     const envPath = path.resolve(process.cwd(), '.env');
     if (fs.existsSync(envPath)) {
       const content = fs.readFileSync(envPath, 'utf8');
-      content.split('\n').forEach(line => {
+      content.split('\r\n').forEach(line => {
         const trimmed = line.trim();
         if (trimmed && !trimmed.startsWith('#')) {
           const firstEqual = trimmed.indexOf('=');
@@ -714,9 +714,9 @@ if (typeof setInterval === 'function') {
 
 // Enforce and validate environment variables for production-grade security
 if (!process.env.DATABASE_URL) {
-  console.error('\n❌ [CRITICAL ERROR] DATABASE_URL is not set in the environment or .env file.');
+  console.error('\r\n❌ [CRITICAL ERROR] DATABASE_URL is not set in the environment or .env file.');
   console.error('Hardcoded database credentials have been removed for production security.');
-  console.error('Please configure DATABASE_URL in your environment or .env file before starting the server.\n');
+  console.error('Please configure DATABASE_URL in your environment or .env file before starting the server.\r\n');
   process.exit(1);
 }
 
@@ -946,7 +946,7 @@ async function initDb() {
   let client;
   try {
     client = await pool.connect();
-    console.log('\n📦 [MATCH DISTRICT DB] Connected to Supabase PostgreSQL Database.');
+    console.log('\r\n📦 [MATCH DISTRICT DB] Connected to Supabase PostgreSQL Database.');
 
     const beforeTables = await client.query(
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = ANY($1::text[])`,
@@ -1344,7 +1344,7 @@ async function initDb() {
       console.warn('⚠️ [BRIDGE] Registration→Team backfill skipped:', bridgeBfErr.message);
     }
 
-    console.log('📦 [MATCH DISTRICT DB] Supabase Tables Initialized Successfully.\n');
+    console.log('📦 [MATCH DISTRICT DB] Supabase Tables Initialized Successfully.\r\n');
   } catch (err) {
     const code = err?.code || 'UNKNOWN';
     const constraint = err?.constraint ? `, constraint: ${err.constraint}` : '';
@@ -1401,11 +1401,11 @@ async function logTermsAcceptance(pool, email, userId, action, req) {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [id, userId || null, email, action, termsVersion, privacyVersion, ipAddress, userAgent]
     ).catch(() => {});
-    console.log(`\n📜 [TERMS ACCEPTANCE] ${action}`);
+    console.log(`\r\n📜 [TERMS ACCEPTANCE] ${action}`);
     console.log(`    Email: ${email} | User: ${userId || '—'}`);
     console.log(`    Terms: v${termsVersion} | Privacy: v${privacyVersion}`);
     console.log(`    IP: ${ipAddress} | UA: ${userAgent.slice(0, 80)}`);
-    console.log(`    Log ID: ${id}\n`);
+    console.log(`    Log ID: ${id}\r\n`);
   } catch (err) {
     console.warn(`⚠️ [TERMS ACCEPTANCE] Failed to log ${action} for ${email}:`, err.message);
   }
@@ -1887,26 +1887,44 @@ const accountSecurity = createAccountSecurity({
   checkRateLimit,
 });
 
+function isPrivateOrProxyIp(ip) {
+  if (!ip) return true;
+  const clean = String(ip).replace(/^::ffff:/, '').trim().split(':')[0];
+  if (clean === '127.0.0.1' || clean === '::1' || clean === 'localhost') return true;
+  if (/^10\./.test(clean)) return true;
+  if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(clean)) return true;
+  if (/^192\.168\./.test(clean)) return true;
+  return false;
+}
+
 function getClientIp(req) {
   if (!req) return '127.0.0.1';
+  let ip = null;
   // Check Cloudflare connecting IP first (trusted from Cloudflare edge proxy)
   const cfIp = req.headers?.['cf-connecting-ip'];
   if (cfIp && typeof cfIp === 'string') {
     const trimmed = cfIp.trim();
-    if (trimmed) return trimmed;
+    if (trimmed) ip = trimmed;
   }
   // Check standard reverse proxy headers (Nginx, Render, fly.io)
-  const realIp = req.headers?.['x-real-ip'];
-  if (realIp && typeof realIp === 'string') {
-    const trimmed = realIp.trim();
-    if (trimmed) return trimmed;
+  if (!ip) {
+    const realIp = req.headers?.['x-real-ip'];
+    if (realIp && typeof realIp === 'string') {
+      const trimmed = realIp.trim();
+      if (trimmed) ip = trimmed;
+    }
   }
-  const forwarded = req.headers?.['x-forwarded-for'];
-  if (forwarded) {
-    const parts = String(forwarded).split(',').map(s => s.trim()).filter(Boolean);
-    if (parts.length > 0 && parts[0]) return parts[0];
+  if (!ip) {
+    const forwarded = req.headers?.['x-forwarded-for'];
+    if (forwarded) {
+      const parts = String(forwarded).split(',').map(s => s.trim()).filter(Boolean);
+      if (parts.length > 0 && parts[0]) ip = parts[0];
+    }
   }
-  return req.socket?.remoteAddress || '127.0.0.1';
+  if (!ip) {
+    ip = req.socket?.remoteAddress || '127.0.0.1';
+  }
+  return String(ip).replace(/^::ffff:/, '').trim();
 }
 
 function checkRateLimit(key, maxRequests = 60, windowMs = 60_000) {
@@ -2703,7 +2721,7 @@ const server = http.createServer(async (req, res) => {
 
           const token = signJwt({ email: foundUser.email, role: foundUser.role, roles: foundUser.roles || [foundUser.role], id: foundUser.uid || foundUser.id });
           const encryptedSession = encryptSessionData(JSON.stringify({ token, userId: foundUser.uid || foundUser.id, email: foundUser.email }));
-          console.log(`\n🛡️ [MATCH DISTRICT AUTH] User "${foundUser.name || email}" logged in successfully via database verification. JWT Generated.\n`);
+          console.log(`\r\n🛡️ [MATCH DISTRICT AUTH] User "${foundUser.name || email}" logged in successfully via database verification. JWT Generated.\r\n`);
           res.writeHead(200, {
             'Content-Type': 'application/json',
             'Set-Cookie': buildSessionCookie(token, req)
@@ -2777,7 +2795,7 @@ const server = http.createServer(async (req, res) => {
 
         const token = signJwt({ email: foundUser.email, role: foundUser.role, roles: foundUser.roles || [foundUser.role], id: foundUser.uid || foundUser.id });
         const encryptedSession = encryptSessionData(JSON.stringify({ token, userId: foundUser.uid || foundUser.id, email: foundUser.email }));
-        console.log(`\n🛡️ [MATCH DISTRICT AUTH] User "${foundUser.name || email}" logged in successfully via Supabase Auth. JWT Generated.\n`);
+        console.log(`\r\n🛡️ [MATCH DISTRICT AUTH] User "${foundUser.name || email}" logged in successfully via Supabase Auth. JWT Generated.\r\n`);
         res.writeHead(200, {
           'Content-Type': 'application/json',
           'Set-Cookie': buildSessionCookie(token, req)
@@ -3744,8 +3762,8 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
     const authUserId = authUser ? (authUser.id || authUser.uid) : null;
     console.log(`[DISCORD AUTH START] Flow: ${isLoginFlow ? 'login' : 'link'} | IP: ${clientIp} | User: ${authUserId || 'guest'} | RedirectParam: ${parsedUrl.searchParams.get('redirect') || 'none'}`);
 
-    // For account linking, check if global Discord API cooldown is active.
-    // For login flow (/api/auth/discord/login), do not preemptively block the user from redirecting to discord.com.
+    // For account linking only, check if global Discord API cooldown is active.
+    // For login flow (/api/auth/discord/login), NEVER block the user from redirecting to discord.com.
     if (!isLoginFlow) {
       const activeGlobalCooldown = getActiveDiscordRateLimitCooldown();
       if (activeGlobalCooldown.isRateLimited) {
@@ -3754,23 +3772,26 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
         res.end();
         return;
       }
-    }
 
-    const ipLimit = checkRateLimit('discord_connect_ip:' + clientIp, 30, 10 * 60 * 1000);
-    if (!ipLimit.allowed) {
-      console.error(`[DISCORD AUTH] Step: connect_ip_rate_limit | Code: rate_limited | Flow: ${isLoginFlow ? 'login' : 'link'} | IP: ${clientIp}`);
-      res.writeHead(302, { Location: linkErrorRedirect('rate_limited', ipLimit.retryAfter) });
-      res.end();
-      return;
-    }
-    if (authUserId) {
-      const userLimit = checkRateLimit('discord_connect_user:' + authUserId, 10, 10 * 60 * 1000);
-      if (!userLimit.allowed) {
-        rollbackRateLimit('discord_connect_ip:' + clientIp);
-        console.error(`[DISCORD AUTH] Step: connect_user_rate_limit | Code: rate_limited | Flow: ${isLoginFlow ? 'login' : 'link'} | User: ${authUserId}`);
-        res.writeHead(302, { Location: linkErrorRedirect('rate_limited', userLimit.retryAfter) });
-        res.end();
-        return;
+      // Generous rate limit for linking only; never block on private/proxy IP
+      if (!isPrivateOrProxyIp(clientIp)) {
+        const ipLimit = checkRateLimit('discord_connect_ip:' + clientIp, 120, 10 * 60 * 1000);
+        if (!ipLimit.allowed) {
+          console.error(`[DISCORD AUTH] Step: connect_ip_rate_limit | Code: rate_limited | Flow: link | IP: ${clientIp}`);
+          res.writeHead(302, { Location: linkErrorRedirect('rate_limited', ipLimit.retryAfter) });
+          res.end();
+          return;
+        }
+      }
+      if (authUserId) {
+        const userLimit = checkRateLimit('discord_connect_user:' + authUserId, 30, 10 * 60 * 1000);
+        if (!userLimit.allowed) {
+          rollbackRateLimit('discord_connect_ip:' + clientIp);
+          console.error(`[DISCORD AUTH] Step: connect_user_rate_limit | Code: rate_limited | Flow: link | User: ${authUserId}`);
+          res.writeHead(302, { Location: linkErrorRedirect('rate_limited', userLimit.retryAfter) });
+          res.end();
+          return;
+        }
       }
     }
 
@@ -3846,12 +3867,19 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
     const clearStateCookie = clearStateCookies;
     let statePayload = null;
 
-    const callbackErrorLocation = (code, retryAfter = null) => {
-      const qs = retryAfter ? `&retry_after=${encodeURIComponent(retryAfter)}` : '';
+    const callbackErrorLocation = (code, retryAfter = null, reason = null) => {
+      let qs = '';
+      if (retryAfter) qs += `&retry_after=${encodeURIComponent(retryAfter)}`;
+      if (reason) qs += `&reason=${encodeURIComponent(String(reason).slice(0, 100))}`;
+
+      // Check if this was a login flow based on state payload or request cookies
+      const hasLoginStateCookie = Boolean(req.headers.cookie && req.headers.cookie.includes('discord_oauth_state_login'));
+      const isLogin = statePayload?.flow === 'login' || (!statePayload && hasLoginStateCookie);
+
       if (statePayload?.returnTo && new URL(getSafeRelativeRedirect(statePayload.returnTo, '/'), 'http://localhost').searchParams.get('discordJoin') === '1') {
         return `${getDiscordJoinReturnPath(statePayload.returnTo, 'error', code)}${qs}`;
       }
-      if (statePayload?.flow === 'login') {
+      if (isLogin) {
         return `/login?discord_error=${encodeURIComponent(code)}${qs}`;
       }
       if (statePayload?.returnTo && typeof statePayload.returnTo === 'string' && statePayload.returnTo.startsWith('/') && !statePayload.returnTo.startsWith('//')) {
@@ -3880,13 +3908,15 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
         return;
       }
 
-      // Generous IP rate limit to prevent abuse while allowing normal browser traffic
-      const cbIpLimit = checkRateLimit('discord_callback_ip:' + clientIp, 120, 10 * 60 * 1000);
-      if (!cbIpLimit.allowed) {
-        console.error(`[DISCORD CONNECT ERROR] Step: callback_ip_rate_limit | Code: rate_limited | IP: ${clientIp}`);
-        res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation('rate_limited', cbIpLimit.retryAfter) });
-        res.end();
-        return;
+      // Generous flood protection for callback; never block on private/proxy IP
+      if (!isPrivateOrProxyIp(clientIp)) {
+        const cbIpLimit = checkRateLimit('discord_callback_ip:' + clientIp, 500, 10 * 60 * 1000);
+        if (!cbIpLimit.allowed) {
+          console.error(`[DISCORD CONNECT ERROR] Step: callback_ip_rate_limit | Code: rate_limited | IP: ${clientIp}`);
+          res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation('rate_limited', cbIpLimit.retryAfter, 'Too many requests') });
+          res.end();
+          return;
+        }
       }
 
       loadEnv();
@@ -4050,46 +4080,67 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
         tokenBody.append('code_verifier', statePayload.codeVerifier);
       }
 
-      const tokenAbort = new AbortController();
-      const tokenTimer = setTimeout(() => tokenAbort.abort(), 10000);
       let tokenRes;
-      console.log(`[DISCORD TOKEN EXCHANGE] POST ${DISCORD_API_BASE_URL}/oauth2/token | redirect_uri: ${effectiveRedirectUri} | client_id: ${discordClientId}`);
-      try {
-        tokenRes = await fetch(`${DISCORD_API_BASE_URL}/oauth2/token`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json',
-            'User-Agent': DISCORD_API_USER_AGENT
-          },
-          body: tokenBody.toString(),
-          signal: tokenAbort.signal
-        });
-      } catch (fetchErr) {
-        clearTimeout(tokenTimer);
-        const durationMs = Date.now() - exchangeStartTime;
-        const isTimeout = tokenAbort.signal.aborted || fetchErr.name === 'AbortError';
-        const stepName = isTimeout ? 'token_exchange_timeout' : 'token_exchange_network';
-        const errCode = isTimeout ? 'timeout' : 'token_exchange_failed';
-        console.error(`[DISCORD TOKEN EXCHANGE ERROR] step: ${stepName} | status: 0 | content_type: none | error: ${isTimeout ? 'timeout' : 'network_error'} | description: ${fetchErr.message} | pkce: ${pkceUsed} | duration_ms: ${durationMs}`);
-        res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation(errCode) });
-        res.end();
-        return;
-      }
-      clearTimeout(tokenTimer);
+      let rawBody = '';
+      const maxTokenAttempts = 2;
+      for (let attempt = 1; attempt <= maxTokenAttempts; attempt++) {
+        const tokenAbort = new AbortController();
+        const tokenTimer = setTimeout(() => tokenAbort.abort(), 10000);
+        console.log(`[DISCORD TOKEN EXCHANGE] (attempt ${attempt}/${maxTokenAttempts}) POST ${DISCORD_API_BASE_URL}/oauth2/token | redirect_uri: ${effectiveRedirectUri} | client_id: ${discordClientId}`);
+        try {
+          tokenRes = await fetch(`${DISCORD_API_BASE_URL}/oauth2/token`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Accept': 'application/json',
+              'User-Agent': DISCORD_API_USER_AGENT
+            },
+            body: tokenBody.toString(),
+            signal: tokenAbort.signal
+          });
+          clearTimeout(tokenTimer);
+          rawBody = await tokenRes.text().catch(() => '');
+          console.log(`[DISCORD TOKEN EXCHANGE RESPONSE] Attempt: ${attempt} | Status: ${tokenRes.status} | Retry-After: ${tokenRes.headers.get('retry-after') || 'none'} | Reset-After: ${tokenRes.headers.get('x-ratelimit-reset-after') || 'none'} | Body: ${rawBody.slice(0, 500)}`);
 
-      const rawBody = await tokenRes.text().catch(() => '');
-      console.log(`[DISCORD TOKEN EXCHANGE RESPONSE] Status: ${tokenRes.status} | Retry-After: ${tokenRes.headers.get('retry-after') || 'none'} | Reset-After: ${tokenRes.headers.get('x-ratelimit-reset-after') || 'none'} | Body: ${rawBody.slice(0, 500)}`);
+          if (tokenRes.status === 429 && attempt < maxTokenAttempts) {
+            const analysis = analyzeDiscordResponse(tokenRes, rawBody, 'token_exchange_retry_check');
+            const headerRetry = analysis.retryAfter || analysis.parsedJson?.retry_after;
+            let retrySec = headerRetry ? parseFloat(headerRetry) : 1;
+            if (isNaN(retrySec) || retrySec <= 0) retrySec = 1;
+            if (retrySec > 10000) retrySec = retrySec / 1000;
+            if (retrySec <= 2.5) {
+              const waitMs = Math.ceil(retrySec * 1000) + 200;
+              console.warn(`[DISCORD TOKEN EXCHANGE] Short rate limit detected (${retrySec}s). Waiting ${waitMs}ms before retry...`);
+              await new Promise(r => setTimeout(r, waitMs));
+              continue;
+            }
+          }
+          break;
+        } catch (fetchErr) {
+          clearTimeout(tokenTimer);
+          const durationMs = Date.now() - exchangeStartTime;
+          const isTimeout = tokenAbort.signal.aborted || fetchErr.name === 'AbortError';
+          const stepName = isTimeout ? 'token_exchange_timeout' : 'token_exchange_network';
+          const errCode = isTimeout ? 'timeout' : 'token_exchange_failed';
+          console.error(`[DISCORD TOKEN EXCHANGE ERROR] step: ${stepName} | status: 0 | content_type: none | error: ${isTimeout ? 'timeout' : 'network_error'} | description: ${fetchErr.message} | pkce: ${pkceUsed} | duration_ms: ${durationMs}`);
+          res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation(errCode, null, fetchErr.message) });
+          res.end();
+          return;
+        }
+      }
 
       if (!tokenRes.ok) {
         const analysis = analyzeDiscordResponse(tokenRes, rawBody, 'token_exchange');
 
         let clientRedirectCode = 'token_exchange_failed';
         let retryAfterVal = null;
+        let reason = null;
         if (analysis.parsedJson?.error === 'invalid_grant') {
           clientRedirectCode = 'invalid_grant';
+          reason = analysis.parsedJson?.error_description || 'Authorization code expired or used';
         } else if (analysis.parsedJson?.error === 'invalid_client') {
           clientRedirectCode = 'invalid_client';
+          reason = 'Invalid client credentials';
         } else if (tokenRes.status === 429) {
           clientRedirectCode = 'rate_limited';
           const headerRetry = analysis.retryAfter || analysis.parsedJson?.retry_after;
@@ -4098,11 +4149,15 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           if (parsedVal > 10000) parsedVal = parsedVal / 1000;
           retryAfterVal = Math.min(900, Math.ceil(parsedVal));
           recordDiscordRateLimit('oauth2/token', retryAfterVal, analysis.isHtml);
+          reason = `Discord API rate limited (retry in ${retryAfterVal}s)`;
         } else if (tokenRes.status === 403) {
           clientRedirectCode = 'blocked';
+          reason = 'Discord blocked the request';
+        } else {
+          reason = analysis.parsedJson?.error_description || analysis.parsedJson?.message || `HTTP ${tokenRes.status}`;
         }
 
-        res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation(clientRedirectCode, retryAfterVal) });
+        res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation(clientRedirectCode, retryAfterVal, reason) });
         res.end();
         return;
       }
@@ -4120,37 +4175,56 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
       await new Promise((resolve) => setTimeout(resolve, 150));
 
       // Fetch user profile from Discord (id, username, global_name, avatar, email)
-      const userAbort = new AbortController();
-      const userTimer = setTimeout(() => userAbort.abort(), 10000);
       let userRes;
-      try {
-        userRes = await fetch(`${DISCORD_API_BASE_URL}/users/@me`, {
-          headers: {
-            'Authorization': `${tokenType} ${accessToken}`,
-            'Accept': 'application/json',
-            'User-Agent': DISCORD_API_USER_AGENT
-          },
-          signal: userAbort.signal
-        });
-      } catch (userFetchErr) {
-        clearTimeout(userTimer);
-        const isTimeout = userAbort.signal.aborted || userFetchErr.name === 'AbortError';
-        const errCode = isTimeout ? 'timeout' : 'profile_fetch_failed';
-        console.error(`[DISCORD CONNECT ERROR] Step: profile_fetch_network | Code: ${errCode} | Exception: ${userFetchErr.message}`);
-        res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation(errCode) });
-        res.end();
-        return;
-      }
-      clearTimeout(userTimer);
+      let rawUserBody = '';
+      const maxUserAttempts = 2;
+      for (let attempt = 1; attempt <= maxUserAttempts; attempt++) {
+        const userAbort = new AbortController();
+        const userTimer = setTimeout(() => userAbort.abort(), 10000);
+        try {
+          userRes = await fetch(`${DISCORD_API_BASE_URL}/users/@me`, {
+            headers: {
+              'Authorization': `${tokenType} ${accessToken}`,
+              'Accept': 'application/json',
+              'User-Agent': DISCORD_API_USER_AGENT
+            },
+            signal: userAbort.signal
+          });
+          clearTimeout(userTimer);
+          rawUserBody = await userRes.text().catch(() => '');
+          console.log(`[DISCORD USER FETCH RESPONSE] Attempt: ${attempt} | Status: ${userRes.status} | Retry-After: ${userRes.headers.get('retry-after') || 'none'} | Reset-After: ${userRes.headers.get('x-ratelimit-reset-after') || 'none'} | Body: ${rawUserBody.slice(0, 500)}`);
 
-      const rawUserBody = await userRes.text().catch(() => '');
-      console.log(`[DISCORD USER FETCH RESPONSE] Status: ${userRes.status} | Retry-After: ${userRes.headers.get('retry-after') || 'none'} | Reset-After: ${userRes.headers.get('x-ratelimit-reset-after') || 'none'} | Body: ${rawUserBody.slice(0, 500)}`);
+          if (userRes.status === 429 && attempt < maxUserAttempts) {
+            const analysis = analyzeDiscordResponse(userRes, rawUserBody, 'profile_fetch_retry_check');
+            const headerRetry = analysis.retryAfter || analysis.parsedJson?.retry_after;
+            let retrySec = headerRetry ? parseFloat(headerRetry) : 1;
+            if (isNaN(retrySec) || retrySec <= 0) retrySec = 1;
+            if (retrySec > 10000) retrySec = retrySec / 1000;
+            if (retrySec <= 2.5) {
+              const waitMs = Math.ceil(retrySec * 1000) + 200;
+              console.warn(`[DISCORD USER FETCH] Short rate limit detected (${retrySec}s). Waiting ${waitMs}ms before retry...`);
+              await new Promise(r => setTimeout(r, waitMs));
+              continue;
+            }
+          }
+          break;
+        } catch (userFetchErr) {
+          clearTimeout(userTimer);
+          const isTimeout = userAbort.signal.aborted || userFetchErr.name === 'AbortError';
+          const errCode = isTimeout ? 'timeout' : 'profile_fetch_failed';
+          console.error(`[DISCORD CONNECT ERROR] Step: profile_fetch_network | Code: ${errCode} | Exception: ${userFetchErr.message}`);
+          res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation(errCode, null, userFetchErr.message) });
+          res.end();
+          return;
+        }
+      }
 
       if (!userRes.ok) {
         const analysis = analyzeDiscordResponse(userRes, rawUserBody, 'profile_fetch');
 
         let clientRedirectCode = 'profile_fetch_failed';
         let retryAfterVal = null;
+        let reason = null;
         if (userRes.status === 429) {
           clientRedirectCode = 'rate_limited';
           const headerRetry = analysis.retryAfter || analysis.parsedJson?.retry_after;
@@ -4159,11 +4233,15 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           if (parsedVal > 10000) parsedVal = parsedVal / 1000;
           retryAfterVal = Math.min(900, Math.ceil(parsedVal));
           recordDiscordRateLimit('users/@me', retryAfterVal, analysis.isHtml);
+          reason = `Discord profile rate limited (retry in ${retryAfterVal}s)`;
         } else if (userRes.status === 403) {
           clientRedirectCode = 'blocked';
+          reason = 'Discord profile access blocked';
+        } else {
+          reason = analysis.parsedJson?.error_description || analysis.parsedJson?.message || `HTTP ${userRes.status}`;
         }
 
-        res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation(clientRedirectCode, retryAfterVal) });
+        res.writeHead(302, { 'Set-Cookie': clearStateCookies, 'Location': callbackErrorLocation(clientRedirectCode, retryAfterVal, reason) });
         res.end();
         return;
       }
@@ -4345,9 +4423,10 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           id: targetUser.uid || targetUser.id
         });
 
-        // Successful login: rollback rate limit hits so normal logins are not penalized
+        // Successful login: rollback rate limit hits and clear any stale Discord rate limit cooldown
         rollbackRateLimit('discord_callback_ip:' + clientIp);
         rollbackRateLimit('discord_connect_ip:' + clientIp);
+        clearDiscordRateLimits();
 
         const safeLoginReturn = getSafeRelativeRedirect(statePayload.returnTo, '/');
         const postLoginPath = getDiscordJoinReturnPath(safeLoginReturn, 'connected');
@@ -4918,7 +4997,7 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           // Delete from temp_users (single-use: registration completed)
           await registrationClient.query('DELETE FROM temp_users WHERE email = $1', [tempUser.email]);
           await registrationClient.query('COMMIT');
-          console.log(`\n📦 [MATCH DISTRICT DB] User "${newUser.email}" registered permanently.\n`);
+          console.log(`\r\n📦 [MATCH DISTRICT DB] User "${newUser.email}" registered permanently.\r\n`);
 
           // Log final terms acceptance
           logTermsAcceptance(pool, newUser.email, newUser.id || newUser.uid, 'final_register', req).catch(() => {});
@@ -5797,7 +5876,7 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           }
 
           await pool.query(`UPDATE users SET "orgApplicationStatus" = 'pending' WHERE id = $1 OR email = $2`, [authUser.id, authUser.email]);
-          console.log(`\n📦 [MATCH DISTRICT DB] Organizer Application "${newApp.orgName}" saved in Supabase PostgreSQL.\n`);
+          console.log(`\r\n📦 [MATCH DISTRICT DB] Organizer Application "${newApp.orgName}" saved in Supabase PostgreSQL.\r\n`);
         } catch (dbErr) {
           console.warn('⚠️ [MATCH DISTRICT DB] Supabase org apply failed:', dbErr.message);
         }
@@ -5908,7 +5987,7 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           } else if (email && status === 'rejected') {
             await pool.query(`UPDATE users SET "orgApplicationStatus" = 'rejected' WHERE email = $1`, [email]);
           }
-          console.log(`\n📦 [MATCH DISTRICT DB] Organizer Application "${id}" updated to "${status}".\n`);
+          console.log(`\r\n📦 [MATCH DISTRICT DB] Organizer Application "${id}" updated to "${status}".\r\n`);
         } catch (dbErr) {
           console.warn('⚠️ [MATCH DISTRICT DB] Supabase approve failed:', dbErr.message);
         }
@@ -6029,7 +6108,7 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           res.end(JSON.stringify({ success: false, error: 'USER_NOT_FOUND', message: 'User profile not found.' }));
           return;
         }
-        console.log(`\n📦 [MATCH DISTRICT DB] Organization profile for user "${authUser.id}" updated.\n`);
+        console.log(`\r\n📦 [MATCH DISTRICT DB] Organization profile for user "${authUser.id}" updated.\r\n`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, user: publicUserRow(dbRes.rows[0]) }));
       } catch (err) {
@@ -6570,7 +6649,7 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
       // 11. Delete primary user record from public.users table
       await pool.query('DELETE FROM users WHERE id = $1', [id]);
 
-      console.log(`\n📦 [MATCH DISTRICT DB] User "${id}" and all associated data completely purged from database.\n`);
+      console.log(`\r\n📦 [MATCH DISTRICT DB] User "${id}" and all associated data completely purged from database.\r\n`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true, message: `User ${id} and all associated data purged successfully.` }));
     } catch (err) {
@@ -6759,7 +6838,7 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
             res.end(JSON.stringify({ success: false, error: 'USER_NOT_FOUND', message: 'User profile to update not found.' }));
             return;
           }
-          console.log(`\n📦 [MATCH DISTRICT DB] User "${targetId}" updated in Supabase PostgreSQL.\n`);
+          console.log(`\r\n📦 [MATCH DISTRICT DB] User "${targetId}" updated in Supabase PostgreSQL.\r\n`);
           updatedRow = dbRes.rows[0];
         }
 
@@ -8458,7 +8537,7 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
             sanitizeImageUrlForDb(t.roadmap_image_url) || ''
           ]
         );
-        console.log(`\n📦 [MATCH DISTRICT DB] Tournament "${t.id}" created in Supabase PostgreSQL.\n`);
+        console.log(`\r\n📦 [MATCH DISTRICT DB] Tournament "${t.id}" created in Supabase PostgreSQL.\r\n`);
         const createdTournament = dbRes.rows[0];
         // Track analytics event
         try {
@@ -9396,7 +9475,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
         } finally {
           configClient.release();
         }
-        console.log(`\n📦 [MATCH DISTRICT DB] Tournament "${id}" updated in Supabase PostgreSQL.\n`);
+        console.log(`\r\n📦 [MATCH DISTRICT DB] Tournament "${id}" updated in Supabase PostgreSQL.\r\n`);
         const updatedTournament = dbRes.rows[0];
         if (updatedTournament.isDraft === false && existing.isDraft === true) {
           notifyFollowersOfTournament(updatedTournament);
@@ -9463,7 +9542,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
       } finally {
         deleteClient.release();
       }
-      console.log(`\n📦 [MATCH DISTRICT DB] Tournament "${id}" and associated records deleted from Supabase PostgreSQL.\n`);
+      console.log(`\r\n📦 [MATCH DISTRICT DB] Tournament "${id}" and associated records deleted from Supabase PostgreSQL.\r\n`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true, message: `Tournament ${id} and all related registrations/notices/messages deleted successfully.` }));
     } catch (err) {
@@ -9983,7 +10062,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
             'UPDATE tournaments SET status = $1, status_before_live = NULL, live_disabled_by_organizer = true WHERE id = $2',
             [restoredStatus, id]
           );
-          console.log(`\n🏆 [MATCH DISTRICT TOURNAMENT] Status updated: ${id} → ${restoredStatus} (non-live by ${authUser.email})\n`);
+          console.log(`\r\n🏆 [MATCH DISTRICT TOURNAMENT] Status updated: ${id} → ${restoredStatus} (non-live by ${authUser.email})\r\n`);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, status: restoredStatus, message: 'Tournament marked as non-live.' }));
           return;
@@ -10001,7 +10080,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           'UPDATE tournaments SET status_before_live = $1, live_disabled_by_organizer = false, status = $2 WHERE id = $3',
           [currentStatus, newStatus, id]
         );
-        console.log(`\n🏆 [MATCH DISTRICT TOURNAMENT] Status updated: ${id} → ${newStatus} (by ${authUser.email})\n`);
+        console.log(`\r\n🏆 [MATCH DISTRICT TOURNAMENT] Status updated: ${id} → ${newStatus} (by ${authUser.email})\r\n`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, status: newStatus, message: `Tournament marked as ${newStatus}.` }));
       } catch (err) {
@@ -10288,7 +10367,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           updateClient.release();
         }
 
-        console.log(`\n📋 [PLANNING CONFIG] Saved for tournament ${tId}\n`);
+        console.log(`\r\n📋 [PLANNING CONFIG] Saved for tournament ${tId}\r\n`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           success: true,
@@ -14650,7 +14729,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
 
         await reconcileTournamentSlots(pool, id);
 
-        console.log(`\n📦 [MATCH DISTRICT DB] Team "${data.team_name}" registered for "${id}" with status "${status}" and entry fee ${entryFeeAmount} in Supabase.\n`);
+        console.log(`\r\n📦 [MATCH DISTRICT DB] Team "${data.team_name}" registered for "${id}" with status "${status}" and entry fee ${entryFeeAmount} in Supabase.\r\n`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, registration: dbRes.rows[0], requiresPayment: isPaid, amount_to_pay: isPaid ? amountToPay : null }));
       } catch (err) {
@@ -15609,7 +15688,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           [noticeId, id, data.title, data.text, pin]
         );
 
-        console.log(`\n📦 [MATCH DISTRICT DB] Notice "${data.title}" saved in Supabase.\n`);
+        console.log(`\r\n📦 [MATCH DISTRICT DB] Notice "${data.title}" saved in Supabase.\r\n`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, notice: dbRes.rows[0] }));
       } catch (err) {
@@ -15649,7 +15728,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
       }
 
       await pool.query('DELETE FROM tournament_notices WHERE id = $1', [id]);
-      console.log(`\n📦 [MATCH DISTRICT DB] Notice "${id}" deleted from Supabase.\n`);
+      console.log(`\r\n📦 [MATCH DISTRICT DB] Notice "${id}" deleted from Supabase.\r\n`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true }));
     } catch (err) {
@@ -17382,7 +17461,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           );
         }
 
-        console.log(`\n📦 [SUBSCRIPTION] User ${user.id} upgraded to ${plan} (${cycle})\n`);
+        console.log(`\r\n📦 [SUBSCRIPTION] User ${user.id} upgraded to ${plan} (${cycle})\r\n`);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -17487,7 +17566,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           );
         }
 
-        console.log(`\n📦 [SUBSCRIPTION] User ${user.id} downgraded to ${plan}\n`);
+        console.log(`\r\n📦 [SUBSCRIPTION] User ${user.id} downgraded to ${plan}\r\n`);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -21741,7 +21820,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
         }));
 
         const totpActive = adminUser.admin_totp_activated && adminUser.admin_totp_secret;
-        console.log(`\n🛡️ [MATCH DISTRICT ADMIN] Admin "${adminUser.name || adminUser.email}" logged in via ${totpActive ? 'TOTP' : 'password (TOTP setup pending)'}.\n`);
+        console.log(`\r\n🛡️ [MATCH DISTRICT ADMIN] Admin "${adminUser.name || adminUser.email}" logged in via ${totpActive ? 'TOTP' : 'password (TOTP setup pending)'}.\r\n`);
 
         res.writeHead(200, {
           'Content-Type': 'application/json',
@@ -21874,7 +21953,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
 
       const formattedSecret = secret.match(/.{1,4}/g).join(' ');
 
-      console.log(`\n🔐 [ADMIN TOTP SETUP] Setup page accessed by admin ${adminUser.email}`);
+      console.log(`\r\n🔐 [ADMIN TOTP SETUP] Setup page accessed by admin ${adminUser.email}`);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
@@ -21944,7 +22023,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           [adminUser.id]
         );
 
-        console.log(`\n🔐 [ADMIN TOTP] Google Authenticator successfully activated for admin ${adminUser.email}\n`);
+        console.log(`\r\n🔐 [ADMIN TOTP] Google Authenticator successfully activated for admin ${adminUser.email}\r\n`);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -22009,7 +22088,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
 
         const formattedSecret = newSecret.match(/.{1,4}/g).join(' ');
 
-        console.log(`\n🔐 [ADMIN TOTP RESET] TOTP reset for admin ${adminUser.email}. New secret generated.\n`);
+        console.log(`\r\n🔐 [ADMIN TOTP RESET] TOTP reset for admin ${adminUser.email}. New secret generated.\r\n`);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -22061,7 +22140,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           [adminUser.id]
         );
 
-        console.log(`\n🔐 [ADMIN TOTP REVOKE] TOTP fully revoked for admin ${adminUser.email}. Account reverts to password-only login.\n`);
+        console.log(`\r\n🔐 [ADMIN TOTP REVOKE] TOTP fully revoked for admin ${adminUser.email}. Account reverts to password-only login.\r\n`);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -22369,10 +22448,10 @@ function startMonitoringWorker() {
 
 // Start listening immediately so host health checks pass instantly without waiting on DB initialization
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🚀 [MATCH DISTRICT PRODUCTION SERVER] Running on http://localhost:${PORT}`);
+  console.log(`\r\n🚀 [MATCH DISTRICT PRODUCTION SERVER] Running on http://localhost:${PORT}`);
   console.log(`🌐 Network: http://127.0.0.1:${PORT} (listening on all interfaces 0.0.0.0)`);
   console.log(`📦 Serving static frontend from ./dist`);
-  console.log(`🔑 API Endpoints active (OTP, JWT Auth, Supabase DB)\n`);
+  console.log(`🔑 API Endpoints active (OTP, JWT Auth, Supabase DB)\r\n`);
 
   (async () => {
     try {

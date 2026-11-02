@@ -385,8 +385,10 @@ function Profile({ onNavigate, selectedUserProfile }) {
         setToastMessage('Discord account connected successfully!');
       } else if (discordParam === 'error') {
         setShowToast(true);
-        if (errCode === 'rate_limited') {
-          let retrySec = Number(searchParams.get('retry_after')) || 5;
+        const hasRetryAfter = searchParams.has('retry_after') && Number(searchParams.get('retry_after')) > 0;
+        const reasonParam = searchParams.get('reason') || searchParams.get('error_description');
+        if (errCode === 'rate_limited' && hasRetryAfter) {
+          let retrySec = Number(searchParams.get('retry_after'));
           if (retrySec > 10000) retrySec = Math.ceil(retrySec / 1000);
           retrySec = Math.min(900, Math.max(1, Math.round(retrySec)));
           try {
@@ -400,7 +402,10 @@ function Profile({ onNavigate, selectedUserProfile }) {
             const minutes = Math.ceil(retrySec / 60);
             setToastMessage(`Discord is temporarily rate-limited. Please try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`);
           }
+        } else if (reasonParam && !['unknown', 'rate_limited'].includes(reasonParam.toLowerCase())) {
+          setToastMessage(reasonParam);
         } else {
+          try { sessionStorage.removeItem('discord_retry_until'); } catch {}
           const friendlyDiscordErrors = {
             cancelled: 'Discord authorization was cancelled.',
             access_denied: 'Discord authorization was cancelled.',
@@ -414,6 +419,9 @@ function Profile({ onNavigate, selectedUserProfile }) {
             misconfigured: 'Discord connection is not configured on the server.',
             exchange_failed: 'Failed to authorize with Discord. Please try again.',
             save_failed: 'Failed to save Discord account details. Please try again.',
+            token_exchange_failed: 'Failed to complete Discord authorization. Please try again.',
+            profile_fetch_failed: 'Could not load Discord profile. Please try again.',
+            rate_limited: 'Discord connection is temporarily busy. Please try again in a moment.',
             server_error: 'A server error occurred. Please try again later.',
           };
           setToastMessage(friendlyDiscordErrors[errCode] || 'Discord connection failed.');

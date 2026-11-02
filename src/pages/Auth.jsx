@@ -362,9 +362,18 @@ function Auth({ onNavigate, initialMode = 'login' }) {
       timeout: 'The connection to Discord timed out. Please try again.',
       blocked: 'Connection to Discord was temporarily blocked. Please try again in a few moments.',
       token_exchange_failed: 'Could not complete sign-in with Discord. Please try again.',
+      profile_fetch_failed: 'Could not load your Discord profile. Please try again.',
+      already_linked: 'This Discord account is already connected to another user.',
+      account_unavailable: 'This account has been suspended or disabled.',
+      admin_mfa_required: 'Admin multi-factor authentication is required for this account.',
+      db_error: 'A server database error occurred. Please try again later.',
+      unknown: 'Discord sign-in failed. Please try again.',
     }
-    if (errorCode === 'rate_limited') {
-      let retrySec = Number(params.get('retry_after')) || 5
+    const reasonParam = params.get('reason') || params.get('error_description')
+    const hasRetryAfter = params.has('retry_after') && Number(params.get('retry_after')) > 0
+
+    if (errorCode === 'rate_limited' && hasRetryAfter) {
+      let retrySec = Number(params.get('retry_after'))
       if (retrySec > 10000) {
         retrySec = Math.ceil(retrySec / 1000)
       }
@@ -375,11 +384,15 @@ function Auth({ onNavigate, initialMode = 'login' }) {
         const minutes = Math.ceil(retrySec / 60)
         triggerToast(`Too many attempts. Please try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`)
       }
+    } else if (reasonParam && !['unknown', 'rate_limited'].includes(reasonParam.toLowerCase())) {
+      triggerToast(reasonParam)
     } else {
       triggerToast(messages[errorCode] || 'Discord sign-in failed. Please try again.')
     }
     params.delete('discord_error')
     params.delete('retry_after')
+    params.delete('reason')
+    params.delete('error_description')
     const query = params.toString()
     window.history.replaceState({}, document.title, `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`)
   }, [])

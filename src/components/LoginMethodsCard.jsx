@@ -373,10 +373,14 @@ export default function LoginMethodsCard({ currentUser, onUserUpdated, triggerTo
             onClick={() => {
               try {
                 const stored = sessionStorage.getItem('discord_retry_until')
-                if (stored && Number(stored) > Date.now()) {
-                  const remMins = Math.max(1, Math.ceil((Number(stored) - Date.now()) / 60000))
-                  triggerToast?.(`Discord rate limit active. Please wait ${remMins}m before retrying.`)
-                  return
+                if (stored) {
+                  if (Number(stored) > Date.now()) {
+                    const remMins = Math.max(1, Math.ceil((Number(stored) - Date.now()) / 60000))
+                    triggerToast?.(`Discord rate limit active. Please wait ${remMins}m before retrying.`)
+                    return
+                  } else {
+                    sessionStorage.removeItem('discord_retry_until')
+                  }
                 }
               } catch {
                 /* ignore storage error */
