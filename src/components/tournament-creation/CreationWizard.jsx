@@ -30,6 +30,7 @@ function emptyForm() {
     perspective: 'tpp',
     slotsTotal: '64',
     reserved_slots: '0',
+    is_free: false,
     entry_fee_amount: '',
     prize_pool_type: 'fixed',
     prize_pool_amount: '',
@@ -85,6 +86,9 @@ function validateStep(step, data, planLimits, orgName, userTier, userRole) {
       break
     }
     case 4: {
+      if (data.is_free) {
+        break
+      }
       if (data.entry_fee_amount !== '' && data.entry_fee_amount !== undefined) {
         const parsedFee = parseInt(data.entry_fee_amount)
         if (isNaN(parsedFee) || parsedFee < 1) {
@@ -250,6 +254,7 @@ export default function CreationWizard() {
           perspective: t.perspective || 'tpp',
           slotsTotal: String(t.slotsTotal || '100'),
           reserved_slots: String(t.reserved_slots || '0'),
+          is_free: Boolean(t.is_free),
           entry_fee_amount: String(t.entry_fee_amount || '0'),
           prize_pool_type: 'fixed',
           prize_pool_amount: String(t.prize_pool_amount || ''),

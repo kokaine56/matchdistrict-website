@@ -1,3 +1,4 @@
+import { DISCORD_AUTH_ENABLED } from '../config/auth.js';
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSearchParams, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -374,7 +375,7 @@ function Profile({ onNavigate, selectedUserProfile }) {
 
   // Handle OAuth returns & URL tab sync
   useEffect(() => {
-    const discordParam = searchParams.get('discord');
+    const discordParam = DISCORD_AUTH_ENABLED ? searchParams.get('discord') : null;
     const googleParam = searchParams.get('google');
     const errCode = searchParams.get('code') || searchParams.get('error') || searchParams.get('discord_error');
 

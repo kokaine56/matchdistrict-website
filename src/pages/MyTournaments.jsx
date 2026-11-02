@@ -69,6 +69,8 @@ const cardVariants = {
 
 export default function MyTournaments({ onNavigate }) {
   const [currentUser] = useCurrentUser()
+  const [verModalTourney, setVerModalTourney] = useState(null)
+  const [copiedVerModalCode, setCopiedVerModalCode] = useState(false)
   const isOrganizer = Boolean(currentUser && (hasOrganizerRights(currentUser) || isSystemAdmin(currentUser)))
   const [viewMode, setViewMode] = useState('joined') // 'joined' | 'hosting'
   const [registrations, setRegistrations] = useState([])
@@ -208,6 +210,9 @@ export default function MyTournaments({ onNavigate }) {
         buttonText: btnState.text,
         buttonClassName: btnState.styleClass,
         regStatus,
+        discordVerificationStatus: reg.discord_verification_status || (reg.discord_verified ? 'verified' : 'pending'),
+        discordVerificationCode: reg.discord_verification_code || null,
+        discordInviteUrl: reg.discord_invite_url || t.discord_invite_url || t.social_links?.discord || null,
         squadIncomplete: isApproved && !reg.is_squad_complete && !reg.squad_waived,
         squadJoined: reg.squad_joined != null ? reg.squad_joined : 1,
         squadRequired: reg.squad_required != null ? reg.squad_required : 4,
@@ -387,6 +392,26 @@ export default function MyTournaments({ onNavigate }) {
                           <span className="text-amber-400 font-mono text-[9px] shrink-0 font-bold">LOCKED</span>
                         </div>
                       )}
+                      {/* Discord Verification Status Chip & Details button */}
+                      <div className="mt-2 flex items-center justify-between gap-1.5 px-1">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 border shrink-0 ${
+                          t.discordVerificationStatus === 'verified'
+                            ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                            : 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+                        }`}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                          <span>{t.discordVerificationStatus === 'verified' ? 'Verified' : 'Pending verification'}</span>
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => setVerModalTourney(t)}
+                          className="text-[10px] font-bold text-primary hover:text-primary/80 transition-colors inline-flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <span>{t.discordVerificationStatus === 'verified' ? 'Discord Info' : 'Verify Code'}</span>
+                          <span className="material-symbols-outlined text-[12px] leading-none">arrow_forward</span>
+                        </button>
+                      </div>
                   </motion.div>
                 ))}
               </motion.div>
@@ -448,6 +473,95 @@ export default function MyTournaments({ onNavigate }) {
           )
         )}
       </div>
+
+      {/* Discord Verification Details Modal */}
+      {verModalTourney && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-indigo-400 text-xl">verified_user</span>
+                <h3 className="font-bold text-sm text-on-background">Discord Verification</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setVerModalTourney(null)}
+                className="text-on-surface-variant hover:text-on-background transition-colors p-1"
+              >
+                <span className="material-symbols-outlined text-lg leading-none">close</span>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface-container border border-outline-variant/20 text-xs">
+              <span className="text-on-surface-variant">Tournament Status</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                verModalTourney.discordVerificationStatus === 'verified'
+                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                  : 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+              }`}>
+                {verModalTourney.discordVerificationStatus === 'verified' ? 'Verified' : 'Pending verification'}
+              </span>
+            </div>
+
+            {verModalTourney.discordVerificationCode ? (
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-surface-container-high/90 p-3.5 rounded-xl border border-outline-variant/30">
+                  <div>
+                    <span className="text-[10px] text-on-surface-variant uppercase font-medium tracking-wider">Your Code</span>
+                    <p className="font-mono text-2xl font-black text-primary tracking-widest select-all">
+                      {verModalTourney.discordVerificationCode}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(verModalTourney.discordVerificationCode);
+                      setCopiedVerModalCode(true);
+                      setTimeout(() => setCopiedVerModalCode(false), 2000);
+                    }}
+                    className="px-4 py-2 bg-primary hover:bg-primary/90 text-on-primary font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm shrink-0 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-sm">
+                      {copiedVerModalCode ? 'check' : 'content_copy'}
+                    </span>
+                    <span>{copiedVerModalCode ? 'Copied' : 'Copy Code'}</span>
+                  </button>
+                </div>
+
+                <p className="text-xs text-on-surface-variant leading-relaxed">
+                  Go to the verification channel of this tournament's Discord server, and paste this code. The bot will then ask you to tag your remaining teammates.
+                </p>
+
+                {verModalTourney.discordInviteUrl && (
+                  <div className="pt-1">
+                    <a
+                      href={verModalTourney.discordInviteUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-400 hover:text-indigo-300 hover:underline"
+                    >
+                      <span className="material-symbols-outlined text-sm">open_in_new</span>
+                      <span>Join Tournament Discord Server</span>
+                    </a>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-3 bg-surface-container-high/50 rounded-lg border border-outline-variant/20 text-xs text-on-surface-variant">
+                <p className="font-medium">Your code will appear here once your payment is approved.</p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setVerModalTourney(null)}
+              className="w-full mt-2 py-2.5 bg-surface-container-highest hover:bg-surface-container-high text-on-surface font-bold text-xs rounded-xl transition-colors cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

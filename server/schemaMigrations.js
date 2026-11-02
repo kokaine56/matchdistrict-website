@@ -597,6 +597,7 @@ export async function runSchemaMigrations(clientOrPool) {
       ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS room_credentials_release_minutes INTEGER DEFAULT 15;
       ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS social_links TEXT DEFAULT '{}';
       ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS discord_invite_url TEXT DEFAULT '';
+      ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS is_free BOOLEAN DEFAULT false;
 
       CREATE TABLE IF NOT EXISTS tournament_registrations (
         id VARCHAR(50) PRIMARY KEY,
@@ -641,6 +642,14 @@ export async function runSchemaMigrations(clientOrPool) {
       ALTER TABLE tournament_registrations ADD COLUMN IF NOT EXISTS injected_by VARCHAR(100);
       ALTER TABLE tournament_registrations ADD COLUMN IF NOT EXISTS injected_at TIMESTAMPTZ;
       ALTER TABLE tournament_registrations ADD COLUMN IF NOT EXISTS discord_verified BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE tournament_registrations ADD COLUMN IF NOT EXISTS discord_verification_code VARCHAR(16);
+      ALTER TABLE tournament_registrations ADD COLUMN IF NOT EXISTS discord_verification_status VARCHAR(32) DEFAULT 'pending';
+      ALTER TABLE tournament_registrations ADD COLUMN IF NOT EXISTS discord_code_used BOOLEAN DEFAULT false;
+      ALTER TABLE tournament_registrations ADD COLUMN IF NOT EXISTS discord_captain_id VARCHAR(32);
+      ALTER TABLE tournament_registrations ADD COLUMN IF NOT EXISTS discord_member_ids JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE tournament_registrations ADD COLUMN IF NOT EXISTS discord_verified_at TIMESTAMPTZ;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tournament_registrations_disc_code ON tournament_registrations(discord_verification_code) WHERE discord_verification_code IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_tournament_registrations_disc_vstatus ON tournament_registrations(tournament_id, discord_verification_status);
       CREATE OR REPLACE VIEW registered_tournament_team_counts AS
       SELECT tournament_id, COUNT(DISTINCT LOWER(BTRIM(team_name)))::INTEGER AS slots_filled
       FROM tournament_registrations

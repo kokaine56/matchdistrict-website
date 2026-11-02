@@ -1,3 +1,4 @@
+import { DISCORD_AUTH_ENABLED } from '../config/auth.js';
 import { useCallback, useEffect, useRef, useState } from 'react'
 import PasswordModal from './PasswordModal.jsx'
 import BottomSheetModal from './BottomSheetModal.jsx'
@@ -170,7 +171,7 @@ export default function LoginMethodsCard({ currentUser, onUserUpdated, triggerTo
     (currentUser?.password_set !== false && currentUser?.email && !currentUser?.google_id && !currentUser?.discord_id)
   )
   const isGoogleConnected = Boolean(methods?.google || currentUser?.google_id)
-  const isDiscordConnected = Boolean(methods?.discord || currentUser?.discord_id || currentUser?.discord?.connected)
+  const isDiscordConnected = DISCORD_AUTH_ENABLED && Boolean(methods?.discord || currentUser?.discord_id || currentUser?.discord?.connected)
 
   let connectedCount = 0
   if (passwordSet) connectedCount += 1
@@ -315,6 +316,7 @@ export default function LoginMethodsCard({ currentUser, onUserUpdated, triggerTo
       </div>
 
       {/* Row 3: Discord */}
+      {DISCORD_AUTH_ENABLED && (
       <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-surface-container/60 border border-outline-variant/30">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-5 h-5 flex items-center justify-center shrink-0">
@@ -393,6 +395,7 @@ export default function LoginMethodsCard({ currentUser, onUserUpdated, triggerTo
           </button>
         )}
       </div>
+      )}
 
       {/* Password Modal */}
       <PasswordModal

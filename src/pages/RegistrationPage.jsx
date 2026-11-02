@@ -437,9 +437,10 @@ function RegistrationPage({ onNavigate }) {
   const [confirmPaymentError, setConfirmPaymentError] = useState('')
   const [copiedToast, setCopiedToast] = useState('')
   const [copiedRegId, setCopiedRegId] = useState(false)
+  const [copiedVerCode, setCopiedVerCode] = useState(false)
   const [submittedTimeIST, setSubmittedTimeIST] = useState('')
   const [rejectedReg, setRejectedReg] = useState(null)
-  const isPaid = parseInt(tourney?.entry_fee_amount || 0) > 0
+  const isPaid = !tourney?.is_free && parseInt(tourney?.entry_fee_amount || 0) > 0
   const entryFee = parseInt(tourney?.entry_fee_amount || 0)
 
   useEffect(() => {
@@ -977,12 +978,76 @@ function RegistrationPage({ onNavigate }) {
               <span className="uppercase tracking-wider">Next Step: Complete Your Squad Roster</span>
             </div>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              Once approved, your slot is confirmed. Share your team invitation link with your teammates from the Team Hub so they can claim their roster slots.
+              {registeredTeam?.status === 'approved' ? 'Your slot is confirmed. Share your team invitation link with your teammates' : 'Once approved, your slot is confirmed. Share your team invitation link with your teammates'} from the Team Hub so they can claim their roster slots.
             </p>
             <div className="flex items-start gap-2 pt-1.5 text-[11px] text-on-surface-variant/80 border-t border-outline-variant/20">
               <span className="material-symbols-outlined text-sm text-primary shrink-0 mt-0.5">lock</span>
               <span>Match room credentials unlock only after all roster slots are linked to registered player accounts.</span>
             </div>
+          </div>
+
+          {/* Discord Tournament Verification Card */}
+          <div className="mt-4 p-4 rounded-xl border border-indigo-500/30 bg-indigo-500/10 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs uppercase tracking-wider">
+                <span className="material-symbols-outlined text-base">verified_user</span>
+                <span>Discord Verification</span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                Pending verification
+              </span>
+            </div>
+
+            {registeredTeam?.discord_verification_code ? (
+              <>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-surface-container-high/90 p-3.5 rounded-xl border border-outline-variant/30">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-on-surface-variant font-medium uppercase tracking-wider">Verification Code</span>
+                    <span className="font-mono text-2xl font-black tracking-widest text-primary mt-0.5 select-all">
+                      {registeredTeam.discord_verification_code}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!registeredTeam?.discord_verification_code) return;
+                      navigator.clipboard.writeText(String(registeredTeam.discord_verification_code));
+                      setCopiedVerCode(true);
+                      setTimeout(() => setCopiedVerCode(false), 2000);
+                    }}
+                    className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-on-primary font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-md shadow-primary/20 cursor-pointer shrink-0"
+                    title="Copy Verification Code"
+                  >
+                    <span className="material-symbols-outlined text-base leading-none">
+                      {copiedVerCode ? 'check' : 'content_copy'}
+                    </span>
+                    <span>{copiedVerCode ? 'Copied Code!' : 'Copy Code'}</span>
+                  </button>
+                </div>
+
+                <p className="text-xs text-on-surface-variant leading-relaxed">
+                  Go to the verification channel of this tournament's Discord server, and paste this code. The bot will then ask you to tag your remaining teammates.
+                </p>
+
+                {(registeredTeam?.discord_invite_url || tourney?.discord_invite_url || tourney?.social_links?.discord) && (
+                  <div className="pt-1">
+                    <a
+                      href={registeredTeam?.discord_invite_url || tourney?.discord_invite_url || tourney?.social_links?.discord}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-400 hover:text-indigo-300 hover:underline transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-sm">open_in_new</span>
+                      <span>Join Tournament Discord Server</span>
+                    </a>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="p-3 bg-surface-container-high/50 rounded-lg border border-outline-variant/20 text-xs text-on-surface-variant">
+                <p className="font-medium">Your code will appear here once your payment is approved.</p>
+              </div>
+            )}
           </div>
 
           {/* Primary Action */}

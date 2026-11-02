@@ -1,3 +1,4 @@
+import { assignVerificationCode } from './verificationCodeService.js';
 import crypto from 'crypto';
 import { ROLES, hasRole, hasCapability, isSystemAdmin } from '../src/utils/iamRoles.js';
 import { reconcileTournamentSlots } from '../workers/slotManagerWorker.js';

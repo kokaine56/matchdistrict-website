@@ -1,3 +1,5 @@
+import { assignVerificationCode } from './server/verificationCodeService.js';
+import { DISCORD_AUTH_ENABLED } from './src/config/auth.js';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -3794,6 +3796,11 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
 
   // 2c. Discord OAuth2 Flow: Start authentication or authenticated account linking.
   if ((urlPath === '/api/auth/discord/connect' || urlPath === '/api/auth/discord' || urlPath === '/api/auth/discord/link' || urlPath === '/api/auth/discord/login') && req.method === 'GET') {
+    if (!DISCORD_AUTH_ENABLED) {
+      res.writeHead(302, { Location: '/login' });
+      res.end();
+      return;
+    }
     const isLoginFlow = urlPath === '/api/auth/discord/login';
     const parsedUrl = new URL(req.url, 'http://localhost');
     const returnTo = getSafeRelativeRedirect(parsedUrl.searchParams.get('redirect'), '/profile');
@@ -3922,6 +3929,11 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
 
   // 2d. Discord OAuth2 Flow: Callback Handler (GET /api/auth/discord/callback)
   if (urlPath === '/api/auth/discord/callback' && req.method === 'GET') {
+    if (!DISCORD_AUTH_ENABLED) {
+      res.writeHead(302, { Location: '/login' });
+      res.end();
+      return;
+    }
     const isHttps = isHttpsRequest(req);
     const clearStateCookies = [
       `discord_oauth_state=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isHttps ? '; Secure' : ''}`,
@@ -4598,6 +4610,11 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
     // 2e. Discord OAuth2 Flow: Disconnect Discord (POST /api/auth/discord/disconnect or POST /api/auth/discord/unlink)
   // Always allowed: Discord is connect-only, never a login credential.
   if ((urlPath === '/api/auth/discord/disconnect' || urlPath === '/api/auth/discord/unlink') && req.method === 'POST') {
+    if (!DISCORD_AUTH_ENABLED) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'DISCORD_AUTH_DISABLED', message: 'Discord authentication is currently disabled.' }));
+      return;
+    }
     const authUser = getAuthUser(req);
     if (!authUser) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -4716,6 +4733,11 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
 
   // 2e-status. Get Discord Linking Status (GET /api/auth/discord/status)
   if (urlPath === '/api/auth/discord/status' && req.method === 'GET') {
+    if (!DISCORD_AUTH_ENABLED) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, connected: false, disabled: true }));
+      return;
+    }
     const authUser = getAuthUser(req);
     if (!authUser) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -7007,7 +7029,8 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
 
       // 2. Fetch registrations
       const regRes = await pool.query(
-        `SELECT id, tournament_id, user_id, team_name, captain, captain_uid, members, status, slot_number, created_at, discord_verified
+        `SELECT id, tournament_id, user_id, team_name, captain, captain_uid, members, status, slot_number, created_at,
+                discord_verified, discord_verification_status, discord_captain_id, discord_member_ids
          FROM tournament_registrations
          WHERE tournament_id = $1 AND LOWER(COALESCE(status, '')) = 'approved'
          ORDER BY created_at ASC`,
@@ -7111,7 +7134,8 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
         const bridgedTeam = teamsByRegId.get(reg.id) || teamsByName.get((reg.team_name || '').toLowerCase().trim());
 
         const isExcluded = EXCLUDED_STATUSES.includes(rawStatus) || (bridgedTeam && bridgedTeam.status === 'disqualified');
-        const isEligible = !isExcluded && (ELIGIBLE_STATUSES.includes(rawStatus) || isEligibleRegistrationStatus(reg.status));
+        const isVerified = Boolean(reg.discord_verification_status === 'verified' || reg.discord_verified);
+        const isEligible = !isExcluded && isVerified && (ELIGIBLE_STATUSES.includes(rawStatus) || isEligibleRegistrationStatus(reg.status));
 
         if (isEligible) {
           eligibleTeamsCount++;
@@ -7241,7 +7265,8 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           team_name: reg.team_name,
           captain: reg.captain,
           status: reg.status,
-          discord_verified: Boolean(reg.discord_verified),
+          discord_verified: Boolean(reg.discord_verification_status === 'verified' || reg.discord_verified),
+          discord_verification_status: reg.discord_verification_status || (reg.discord_verified ? 'verified' : 'pending'),
           is_eligible: isEligible,
           leader: teamMembers.find((m) => m.role === 'leader') || null,
           members: teamMembers,
@@ -7328,6 +7353,319 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
         console.error('[BOT API] Failed to persist Discord registration verification:', err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // Helper to authenticate bot or verify organiser scope
+  async function checkBotOrOrganiserAuth(req, tournamentId) {
+    const isBotSecretValid = verifyBotAuth(req);
+    const incomingOrganiserCode = req.headers['x-organiser-code'] || req.headers['x-organizer-code'];
+    const incomingGuildId = req.headers['x-guild-id'];
+
+    const tRes = await pool.query(
+      'SELECT id, title, game, status, match_type, format, "orgId", org_id FROM tournaments WHERE id = $1',
+      [tournamentId]
+    );
+    if (tRes.rows.length === 0) {
+      return { ok: false, status: 404, error: 'NOT_FOUND', message: 'Tournament not found.' };
+    }
+    const tournament = tRes.rows[0];
+    const tournamentOrgId = tournament.orgId || tournament.org_id;
+
+    if (incomingOrganiserCode) {
+      const codeHash = hashOrganiserCode(String(incomingOrganiserCode).trim());
+      const codeRes = await pool.query(
+        'SELECT organiser_id, status FROM organiser_linking_codes WHERE code_hash = $1 LIMIT 1',
+        [codeHash]
+      );
+      if (codeRes.rows.length === 0 || codeRes.rows[0].status !== 'active' || codeRes.rows[0].organiser_id !== tournamentOrgId) {
+        return { ok: false, status: 403, error: 'FORBIDDEN', message: 'Organiser code does not match this tournament organiser.' };
+      }
+      return { ok: true, tournament, orgId: tournamentOrgId };
+    }
+
+    if (incomingGuildId) {
+      const linkRes = await pool.query(
+        "SELECT organiser_id FROM organiser_discord_servers WHERE guild_id = $1 AND status = 'linked' LIMIT 1",
+        [String(incomingGuildId).trim()]
+      );
+      if (linkRes.rows.length > 0 && linkRes.rows[0].organiser_id !== tournamentOrgId) {
+        return { ok: false, status: 403, error: 'FORBIDDEN', message: 'Discord server is not linked to this tournament organiser.' };
+      }
+    }
+
+    if (isBotSecretValid) {
+      return { ok: true, tournament, orgId: tournamentOrgId };
+    }
+
+    return { ok: false, status: 401, error: 'UNAUTHORIZED', message: 'Missing valid bot authentication or organiser code.' };
+  }
+
+  // POST /api/bot/tournaments/:id/verification/check-code
+  const checkCodeMatch = urlPath.match(/^\/api\/bot\/tournaments\/([^/]+)\/(?:verification\/)?check-code$/);
+  if (checkCodeMatch && req.method === 'POST') {
+    const tId = decodeURIComponent(checkCodeMatch[1]);
+    const clientIp = getClientIp(req);
+    const rateCheck = checkRateLimit('bot_check_code_ip:' + clientIp, 60, 60000);
+    if (!rateCheck.allowed) {
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, reason: 'rate_limited', message: 'Too many requests. Please wait a moment.' }));
+      return;
+    }
+
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        req.headers['x-organiser-code'] = req.headers['x-organiser-code'] || payload.organiser_code;
+        req.headers['x-guild-id'] = req.headers['x-guild-id'] || payload.guild_id;
+
+        const authCheck = await checkBotOrOrganiserAuth(req, tId);
+        if (!authCheck.ok) {
+          res.writeHead(authCheck.status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, reason: authCheck.error, message: authCheck.message }));
+          return;
+        }
+
+        const tournament = authCheck.tournament;
+        const rawCode = String(payload.code || '').trim().toUpperCase();
+        if (!rawCode) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, reason: 'missing_code', message: 'Verification code is required.' }));
+          return;
+        }
+
+        // Query across all registrations by verification code
+        const regRes = await pool.query(
+          'SELECT * FROM tournament_registrations WHERE discord_verification_code = $1 LIMIT 1',
+          [rawCode]
+        );
+
+        if (regRes.rows.length === 0) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: false,
+            reason: 'not_found',
+            message: 'Verification code not found.'
+          }));
+          return;
+        }
+
+        const reg = regRes.rows[0];
+
+        // Check if code belongs to a different tournament
+        if (reg.tournament_id !== tournament.id) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: false,
+            reason: 'different_tournament',
+            message: 'This code belongs to a different tournament.'
+          }));
+          return;
+        }
+
+        // Check approved / confirmed status
+        const approvedStatuses = ['approved', 'confirmed', 'verified_by_host', 'VERIFIED_BY_HOST'];
+        if (!approvedStatuses.includes((reg.status || '').toLowerCase())) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: false,
+            reason: 'not_approved_yet',
+            message: 'Registration is not approved yet.'
+          }));
+          return;
+        }
+
+        // Check if already used
+        if (reg.discord_code_used || reg.discord_verification_status === 'verified') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: false,
+            reason: 'already_used',
+            message: 'This verification code has already been used.'
+          }));
+          return;
+        }
+
+        // Calculate teammates still to be tagged: Squad 4 -> 3, Duo 2 -> 1, Solo 1 -> 0
+        const matchType = (tournament.match_type || tournament.format || 'squad').toLowerCase();
+        let teamSize = 4;
+        if (matchType.includes('duo') || matchType === '2') {
+          teamSize = 2;
+        } else if (matchType.includes('solo') || matchType === '1') {
+          teamSize = 1;
+        } else {
+          teamSize = 4;
+        }
+        const teammatesNeeded = Math.max(0, teamSize - 1);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          registration_id: reg.id,
+          team_name: reg.team_name,
+          captain_name: reg.captain,
+          teammates_needed: teammatesNeeded
+        }));
+      } catch (err) {
+        console.error('[BOT API] Check code error:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, reason: 'server_error', message: err.message }));
+      }
+    });
+    return;
+  }
+
+  // POST /api/bot/tournaments/:id/verification/complete
+  const completeVerMatch = urlPath.match(/^\/api\/bot\/tournaments\/([^/]+)\/(?:verification\/)?complete$/);
+  if (completeVerMatch && req.method === 'POST') {
+    const tId = decodeURIComponent(completeVerMatch[1]);
+    const clientIp = getClientIp(req);
+    const rateCheck = checkRateLimit('bot_complete_ver_ip:' + clientIp, 60, 60000);
+    if (!rateCheck.allowed) {
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'RATE_LIMITED', message: 'Too many requests. Please wait a moment.' }));
+      return;
+    }
+
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      let client = null;
+      try {
+        const payload = JSON.parse(body || '{}');
+        req.headers['x-organiser-code'] = req.headers['x-organiser-code'] || payload.organiser_code;
+        req.headers['x-guild-id'] = req.headers['x-guild-id'] || payload.guild_id;
+
+        const authCheck = await checkBotOrOrganiserAuth(req, tId);
+        if (!authCheck.ok) {
+          res.writeHead(authCheck.status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: authCheck.error, message: authCheck.message }));
+          return;
+        }
+
+        const tournament = authCheck.tournament;
+        const registrationId = String(payload.registration_id || '').trim();
+        const captainDiscordId = String(payload.captain_discord_id || '').trim();
+        const rawTeammates = Array.isArray(payload.teammate_discord_ids) ? payload.teammate_discord_ids : [];
+        const teammateDiscordIds = rawTeammates.map(id => String(id).trim()).filter(Boolean);
+
+        if (!registrationId) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'MISSING_REGISTRATION_ID', message: 'registration_id is required.' }));
+          return;
+        }
+
+        if (!/^\d{17,20}$/.test(captainDiscordId)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'INVALID_CAPTAIN_ID', message: 'Invalid captain Discord ID.' }));
+          return;
+        }
+
+        for (const tmId of teammateDiscordIds) {
+          if (!/^\d{17,20}$/.test(tmId)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'INVALID_TEAMMATE_ID', message: 'Invalid teammate Discord ID: ' + tmId }));
+            return;
+          }
+        }
+
+        const allCandidateIds = [captainDiscordId, ...teammateDiscordIds];
+        const uniqueSet = new Set(allCandidateIds);
+        if (uniqueSet.size !== allCandidateIds.length) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'DUPLICATE_DISCORD_IDS', message: 'Duplicate Discord user IDs are not allowed in the same team.' }));
+          return;
+        }
+
+        // Check if any Discord user is already verified in another team of the same tournament
+        const existingVerifiedRes = await pool.query(
+          `SELECT id, team_name, discord_captain_id, discord_member_ids
+           FROM tournament_registrations
+           WHERE tournament_id = $1
+             AND (discord_verification_status = 'verified' OR discord_verified = true)
+             AND id != $2`,
+          [tournament.id, registrationId]
+        );
+
+        for (const row of existingVerifiedRes.rows) {
+          const verifiedInRow = [row.discord_captain_id].filter(Boolean);
+          if (Array.isArray(row.discord_member_ids)) {
+            verifiedInRow.push(...row.discord_member_ids.map(String));
+          }
+          const conflictId = allCandidateIds.find(id => verifiedInRow.includes(id));
+          if (conflictId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              success: false,
+              error: 'USER_ALREADY_VERIFIED',
+              message: `Discord user <@${conflictId}> is already in verified team "${row.team_name}". Each participant can only join one team per tournament.`,
+              conflicting_user_id: conflictId
+            }));
+            return;
+          }
+        }
+
+        // Atomic update in transaction
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        const lockRes = await client.query(
+          'SELECT * FROM tournament_registrations WHERE id = $1 AND tournament_id = $2 FOR UPDATE',
+          [registrationId, tournament.id]
+        );
+
+        if (lockRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'NOT_FOUND', message: 'Registration not found for this tournament.' }));
+          return;
+        }
+
+        const reg = lockRes.rows[0];
+        if (reg.discord_code_used || reg.discord_verification_status === 'verified') {
+          await client.query('ROLLBACK');
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'ALREADY_USED', message: 'This registration has already completed verification.' }));
+          return;
+        }
+
+        const updRes = await client.query(
+          `UPDATE tournament_registrations
+           SET discord_verification_status = 'verified',
+               discord_code_used = true,
+               discord_verified = true,
+               discord_captain_id = $1,
+               discord_member_ids = $2::jsonb,
+               discord_verified_at = CURRENT_TIMESTAMP,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $3 AND tournament_id = $4
+           RETURNING id, team_name, slot_number, discord_verification_status`,
+          [captainDiscordId, JSON.stringify(teammateDiscordIds), registrationId, tournament.id]
+        );
+
+        await client.query('COMMIT');
+        const finalReg = updRes.rows[0];
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          registration_id: finalReg.id,
+          team_name: finalReg.team_name,
+          slot_number: finalReg.slot_number || null
+        }));
+      } catch (err) {
+        if (client) {
+          try { await client.query('ROLLBACK'); } catch {}
+        }
+        console.error('[BOT API] Complete verification error:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: err.message }));
+      } finally {
+        if (client) client.release();
       }
     });
     return;
@@ -14421,7 +14759,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
 
         const assignedAmountDue = isPaid ? amountToPay : null;
         const membersStr = formData.members ? (typeof formData.members === 'string' ? formData.members : JSON.stringify(formData.members)) : '[]';
-        const status = isPaid ? (payload.screenshot_url ? 'pending' : 'pending_payment') : 'pending';
+        const status = isPaid ? (payload.screenshot_url ? 'pending' : 'pending_payment') : 'approved';
 
         let regRes;
         let regId = targetRegId;
@@ -14466,6 +14804,24 @@ function validateTournamentSocialUrl(platform, rawUrl) {
              membersStr, status, formData.email || null, formData.phone || null, idempotencyKey || null,
              payload.screenshot_url || null, payload.utr_number || null, normPaymentApp || 'other', assignedAmountDue]
           );
+        }
+
+        let assignedCode = null;
+        if (!isPaid) {
+          try {
+            assignedCode = await assignVerificationCode(client, regId);
+            if (regRes?.rows?.[0]) {
+              regRes.rows[0].discord_verification_code = assignedCode;
+              regRes.rows[0].discord_verification_status = 'pending';
+            }
+          } catch (codeErr) {
+            console.warn('[SessionComplete] assignVerificationCode error:', codeErr.message);
+          }
+          try {
+            await ensureTeamForRegistration(client, session.tournament_id, authUser.id, formData.team_name);
+          } catch (bridgeErr) {
+            console.warn('[SessionComplete] ensureTeamForRegistration non-fatal:', bridgeErr.message);
+          }
         }
 
         let paymentRecord = null;
@@ -14532,14 +14888,20 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           console.warn('[SessionComplete] reconcileTournamentSlots skipped:', slotErr.message);
         }
 
+        const completeReg = regRes.rows[0] ? { ...regRes.rows[0] } : {};
+        if (assignedCode) {
+          completeReg.discord_verification_code = assignedCode;
+          completeReg.discord_verification_status = 'pending';
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           success: true,
-          registration: regRes.rows[0],
+          registration: completeReg,
           predicted_group: predictedGroup,
           payment: paymentRecord,
           requiresPayment: isPaid,
-          amount_to_pay: isPaid ? amountToPay : null
+          amount_to_pay: isPaid ? amountToPay : null,
+          discord_invite_url: tournament.discord_invite_url || tournament.discord_invite || null
         }));
       } catch (err) {
         if (client) {
@@ -14976,6 +15338,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
       }
 
       const enriched = dbRes.rows.map((reg) => {
+        const { discord_verification_code, ...safeReg } = reg;
         const team = teamByRegId.get(reg.id) || teamByLeaderId.get(reg.user_id) || null;
         const members = team?.members || [];
         const isWaived = Boolean(team?.squad_waived_by);
@@ -14992,7 +15355,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
         const unlinkedSlots = parsedSlots.filter((s) => !claimedSlots.has(s.slot));
 
         return {
-          ...reg,
+          ...safeReg,
           team_name: reg.team_name || team?.team_name || null,
           payment_submitted_at_ist: formatPaymentSubmittedAtIST(reg.payment_submitted_at || reg.created_at),
           stage: stageInfo.stage,
@@ -15505,7 +15868,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
       let teamByLeaderId = new Map();
 
       if (tournIds.length > 0) {
-        const tRes = await pool.query('SELECT id, match_type FROM tournaments WHERE id = ANY($1)', [tournIds]);
+        const tRes = await pool.query('SELECT id, match_type, discord_invite_url, social_links FROM tournaments WHERE id = ANY($1)', [tournIds]);
         for (const t of tRes.rows) {
           tournamentsMap.set(t.id, t);
         }
@@ -15551,8 +15914,10 @@ function validateTournamentSocialUrl(platform, rawUrl) {
         const claimedSlots = new Set(members.map((m) => m.roster_slot).filter((s) => s !== null && s !== undefined));
         const unlinkedSlots = parsedSlots.filter((s) => !claimedSlots.has(s.slot));
 
+        const discInvite = tournament?.discord_invite_url || tournament?.social_links?.discord || null;
         return {
           ...reg,
+          discord_invite_url: discInvite,
           stage: stageInfo.stage,
           stage_label: stageInfo.label,
           stage_message: stageInfo.message,
@@ -16317,7 +16682,8 @@ function validateTournamentSocialUrl(platform, rawUrl) {
           lobby_start_time: 'lobby_start_time',
           sponsors_enabled: 'sponsors_enabled',
           teams_per_group: 'teams_per_group',
-          roadmap_image_url: 'roadmap_image_url'
+          roadmap_image_url: 'roadmap_image_url',
+          is_free: 'is_free'
         };
 
         for (const [key, col] of Object.entries(fieldMap)) {
@@ -16326,7 +16692,7 @@ function validateTournamentSocialUrl(platform, rawUrl) {
             let val = t[key];
             if (['slotsTotal', 'slotsFilled', 'reserved_slots', 'entry_fee_amount', 'prize_pool_amount', 'version'].includes(key)) {
               val = parseInt(val);
-            } else if (['featured', 'isDraft'].includes(key)) {
+            } else if (['featured', 'isDraft', 'is_free'].includes(key)) {
               val = Boolean(val);
             } else if (['rules', 'timeline'].includes(key) && typeof val !== 'string') {
               val = JSON.stringify(val);

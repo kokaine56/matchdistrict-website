@@ -382,6 +382,14 @@ export default function TournamentRegistrations() {
                         <span className="sm:hidden text-[9px] font-bold uppercase tracking-wider text-on-surface-variant w-20 shrink-0">Status</span>
                         {statusBadge(reg.status)}
                         {sBadge}
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 border ${
+                          (reg.discord_verification_status === 'verified' || reg.discord_verified)
+                            ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                            : 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+                        }`}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                          <span>{(reg.discord_verification_status === 'verified' || reg.discord_verified) ? 'Verified' : 'Pending verification'}</span>
+                        </span>
                       </div>
 
                       {/* Date */}
@@ -407,6 +415,14 @@ export default function TournamentRegistrations() {
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-bold text-on-background uppercase tracking-wide">Squad Stage:</span>
                               {sBadge}
+                              <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 border ${
+                                (reg.discord_verification_status === 'verified' || reg.discord_verified)
+                                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                                  : 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+                              }`}>
+                                <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                                <span>{(reg.discord_verification_status === 'verified' || reg.discord_verified) ? 'Verified' : 'Pending verification'}</span>
+                              </span>
                             </div>
                             <p className="text-[11px] text-on-surface-variant">
                               {reg.squad_waived

@@ -8,6 +8,7 @@ export default function TournamentCardPreview({ data }) {
     entry_fee_amount = 0,
     prize_pool_amount = 0,
     prize_pool_type = 'fixed',
+  is_free = false,
     cover_image_url = '',
     match_type = 'squad',
   } = data

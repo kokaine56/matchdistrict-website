@@ -121,7 +121,9 @@ function WalletPassCard({
   displayBadgeText,
   displayBadgeBg,
   hasSponsors,
-  cardColor
+  cardColor,
+  is_free,
+  isFree
 }) {
   const activeTheme = getThemeConfig(cardColor)
   const cc = getThemeTypography(cardColor)
@@ -154,7 +156,13 @@ function WalletPassCard({
   const total = parseInt(slotsTotal) || 0
   const filled = parseInt(slotsFilled) || 0
   const fillPct = total > 0 ? Math.min(Math.round((filled / total) * 100), 100) : 0
-  const entryDisplay = entryFeeAmount > 0 ? `₹${parseInt(entryFeeAmount).toLocaleString('en-IN')}` : (entryFee || 'Free')
+  const isFreeTournament = Boolean(
+    is_free ||
+    isFree ||
+    (entryFeeAmount === 0 && (!prizePool || prizePool === '0' || prizePool === 'TBD' || prizePool === 'No Prize Pool' || prizePool === 'Free')) ||
+    (entryFee === 'Free' && (!prizePool || prizePool === 'No Prize Pool' || prizePool === '0'))
+  )
+  const entryDisplay = isFreeTournament ? 'Free' : (entryFeeAmount > 0 ? `₹${parseInt(entryFeeAmount).toLocaleString('en-IN')}` : (entryFee || 'Free'))
   const prizeDisplay = prizePool ? formatCompactPrize(prizePool) : 'TBA'
 
   return (
@@ -436,6 +444,8 @@ function TournamentCardBase({
   date,
   forceWalletCard,
   cardColor,
+  is_free,
+  isFree,
   // Optional: viewer's own registration status for this tournament.
   // When supplied, overrides the generic lifecycle CTA.
   regStatus
@@ -472,7 +482,13 @@ function TournamentCardBase({
   const matchLabel = MATCH_LABELS[(matchType || '').toLowerCase()] || matchType || 'N/A'
   const perspLabel = PERSPECTIVE_LABELS[(perspective || '').toLowerCase()] || perspective || 'N/A'
   const fillPct = total > 0 ? Math.min(Math.round((filled / total) * 100), 100) : 0
-  const entryDisplay = entryFeeAmount > 0 ? `₹${parseInt(entryFeeAmount).toLocaleString('en-IN')}` : (entryFee || 'Free')
+  const isFreeTournament = Boolean(
+    is_free ||
+    isFree ||
+    (entryFeeAmount === 0 && (!prizePool || prizePool === '0' || prizePool === 'TBD' || prizePool === 'No Prize Pool' || prizePool === 'Free')) ||
+    (entryFee === 'Free' && (!prizePool || prizePool === 'No Prize Pool' || prizePool === '0'))
+  )
+  const entryDisplay = isFreeTournament ? 'Free' : (entryFeeAmount > 0 ? `₹${parseInt(entryFeeAmount).toLocaleString('en-IN')}` : (entryFee || 'Free'))
 
   const isLive = lifecycleStatus === 'live'
 
@@ -499,6 +515,7 @@ function TournamentCardBase({
     prizePool,
     entryDisplay,
     entryFeeAmount,
+    isFreeTournament,
     orgName,
     orgTier,
     matchLabel,
@@ -529,6 +546,8 @@ function TournamentCardBase({
       slotsTotal={slotsTotal}
       slotsFilled={slotsFilled}
       entryFeeAmount={entryFeeAmount}
+      is_free={isFreeTournament}
+      isFree={isFreeTournament}
       orgName={orgName}
       orgTier={orgTier}
       buttonText={finalButtonText}

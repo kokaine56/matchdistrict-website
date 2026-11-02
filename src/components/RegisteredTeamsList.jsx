@@ -1,3 +1,4 @@
+import { DISCORD_AUTH_ENABLED } from '../config/auth.js';
 import { useState, useEffect } from 'react';
 import { useCurrentUser } from '../hooks/useCurrentUser.js';
 
@@ -34,7 +35,7 @@ export default function RegisteredTeamsList({
 
   // Fetch viewer's own Discord status
   useEffect(() => {
-    if (!currentUser) {
+    if (!DISCORD_AUTH_ENABLED || !currentUser) {
       setViewerDiscord(null);
       return;
     }
@@ -175,7 +176,7 @@ export default function RegisteredTeamsList({
       </div>
 
       {/* Mandatory Discord Linking Notice */}
-      {shouldShowDiscordWarning && <div
+      {DISCORD_AUTH_ENABLED && shouldShowDiscordWarning && <div
         className={`flex w-full items-start gap-3 rounded-xl border p-3 sm:p-4 text-sm leading-5 ${
           isGoldTheme
             ? 'bg-amber-500/10 border-[#D4A017]/25 text-[#8A650D] dark:text-amber-200'
@@ -189,6 +190,7 @@ export default function RegisteredTeamsList({
       </div>}
 
       {/* Viewer's Discord Status / Action */}
+      {DISCORD_AUTH_ENABLED && (
       <div className="flex min-h-10 w-full items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <DiscordIcon className="h-5 w-5 shrink-0 text-[#5865F2]" />
@@ -213,6 +215,7 @@ export default function RegisteredTeamsList({
           </button>
         )}
       </div>
+      )}
 
       {/* Empty State */}
       {teams.length === 0 ? (

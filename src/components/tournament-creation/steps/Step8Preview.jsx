@@ -61,7 +61,8 @@ export default function Step8Preview({ data, orgName, orgTier }) {
               orgTier={orgTier}
               slotsTotal={data.slotsTotal}
               slotsFilled={0}
-              entryFeeAmount={entryFee}
+              entryFeeAmount={data.is_free ? 0 : entryFee}
+              is_free={data.is_free}
               isPreview={true}
               buttonText="JOIN NOW"
               onNavigate={() => {}}
@@ -94,9 +95,10 @@ export default function Step8Preview({ data, orgName, orgTier }) {
           <DetailRow label="Total Slots" value={data.slotsTotal} />
           <DetailRow label="Reserved Slots" value={data.reserved_slots || '0'} />
           <DetailRow label="Available Public Slots" value={String(availableSlots)} />
-          <DetailRow label="Entry Fee" value={entryFee ? `₹${entryFee.toLocaleString('en-IN')}` : 'Free'} />
+          <DetailRow label="Entry Fee" value={data.is_free ? 'Free' : (entryFee ? `₹${entryFee.toLocaleString('en-IN')}` : 'Free')} />
 
           {/* Prize Pool Breakdown */}
+          {!data.is_free && totalPrizePool > 0 && (
           <div className="pt-2 border-t border-outline-variant/20">
             <h4 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">Prize Pool</h4>
             <DetailRow label="Total Prize Pool" value={`₹${totalPrizePool.toLocaleString('en-IN')}`} />
@@ -115,6 +117,7 @@ export default function Step8Preview({ data, orgName, orgTier }) {
               </div>
             )}
           </div>
+          )}
 
           {(data.sponsors || []).length > 0 && (
             <div className="pt-2 border-t border-outline-variant/20">
