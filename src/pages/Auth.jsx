@@ -364,8 +364,11 @@ function Auth({ onNavigate, initialMode = 'login' }) {
       token_exchange_failed: 'Could not complete sign-in with Discord. Please try again.',
     }
     if (errorCode === 'rate_limited') {
-      const retrySec = Number(params.get('retry_after')) || 60
-      const minutes = Math.max(1, Math.ceil(retrySec / 60))
+      let retrySec = Number(params.get('retry_after')) || 60
+      if (retrySec > 10000) {
+        retrySec = Math.ceil(retrySec / 1000)
+      }
+      const minutes = Math.min(15, Math.max(1, Math.ceil(retrySec / 60)))
       triggerToast(`Too many attempts. Please try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`)
     } else {
       triggerToast(messages[errorCode] || 'Discord sign-in failed. Please try again.')

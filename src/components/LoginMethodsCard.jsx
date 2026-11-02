@@ -27,9 +27,10 @@ export default function LoginMethodsCard({ currentUser, onUserUpdated, triggerTo
       }
       setMethods(data.methods)
       if (data.discord_rate_limited?.remainingSeconds > 0) {
-        setDiscordRateLimit(data.discord_rate_limited)
+        const remaining = Math.min(900, Math.max(1, data.discord_rate_limited.remainingSeconds))
+        setDiscordRateLimit({ ...data.discord_rate_limited, remainingSeconds: remaining })
         try {
-          sessionStorage.setItem('discord_retry_until', String(Date.now() + (data.discord_rate_limited.remainingSeconds * 1000)))
+          sessionStorage.setItem('discord_retry_until', String(Date.now() + (remaining * 1000)))
         } catch {
           /* ignore storage error */
         }

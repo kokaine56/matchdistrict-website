@@ -581,7 +581,17 @@ let discordRateLimitCooldown = {
 };
 
 function recordDiscordRateLimit(endpoint, retryAfterSec, isHtml) {
-  const retrySec = Math.max(1, parseInt(retryAfterSec, 10) || 60);
+  let retrySec = parseInt(retryAfterSec, 10);
+  if (isNaN(retrySec) || retrySec <= 0) {
+    retrySec = 60;
+  }
+  // Detect if retryAfterSec was provided in milliseconds (e.g. 76800 ms -> 77s)
+  if (retrySec > 10000) {
+    retrySec = Math.ceil(retrySec / 1000);
+  }
+  // Cap at a sensible maximum window (15 minutes = 900 seconds)
+  retrySec = Math.min(900, Math.max(1, retrySec));
+
   discordRateLimitCooldown = {
     activeUntil: Date.now() + (retrySec * 1000),
     retryAfterSeconds: retrySec,
@@ -598,7 +608,8 @@ function recordDiscordRateLimit(endpoint, retryAfterSec, isHtml) {
 function getActiveDiscordRateLimitCooldown() {
   const now = Date.now();
   if (now < discordRateLimitCooldown.activeUntil) {
-    const remainingSeconds = Math.ceil((discordRateLimitCooldown.activeUntil - now) / 1000);
+    let remainingSeconds = Math.ceil((discordRateLimitCooldown.activeUntil - now) / 1000);
+    remainingSeconds = Math.min(900, Math.max(1, remainingSeconds));
     return {
       isRateLimited: true,
       remainingSeconds,
@@ -1852,17 +1863,24 @@ const accountSecurity = createAccountSecurity({
 
 function getClientIp(req) {
   if (!req) return '127.0.0.1';
-  const remoteAddr = req.socket?.remoteAddress || '127.0.0.1';
-  const trustProxy = process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY === '1';
-  if (!trustProxy) {
-    return remoteAddr;
+  // Check Cloudflare connecting IP first (trusted from Cloudflare edge proxy)
+  const cfIp = req.headers?.['cf-connecting-ip'];
+  if (cfIp && typeof cfIp === 'string') {
+    const trimmed = cfIp.trim();
+    if (trimmed) return trimmed;
   }
-  const forwarded = req.headers['x-forwarded-for'];
+  // Check standard reverse proxy headers (Nginx, Render, fly.io)
+  const realIp = req.headers?.['x-real-ip'];
+  if (realIp && typeof realIp === 'string') {
+    const trimmed = realIp.trim();
+    if (trimmed) return trimmed;
+  }
+  const forwarded = req.headers?.['x-forwarded-for'];
   if (forwarded) {
     const parts = String(forwarded).split(',').map(s => s.trim()).filter(Boolean);
-    if (parts.length > 0) return parts[0];
+    if (parts.length > 0 && parts[0]) return parts[0];
   }
-  return remoteAddr;
+  return req.socket?.remoteAddress || '127.0.0.1';
 }
 
 function checkRateLimit(key, maxRequests = 60, windowMs = 60_000) {
@@ -3688,12 +3706,16 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
     const clientIp = getClientIp(req);
     const authUserId = authUser ? (authUser.id || authUser.uid) : null;
 
-    const activeGlobalCooldown = getActiveDiscordRateLimitCooldown();
-    if (activeGlobalCooldown.isRateLimited) {
-      console.warn(`[DISCORD AUTH] Connect start blocked by active Discord rate limit cooldown (${activeGlobalCooldown.remainingSeconds}s remaining). Block type: ${activeGlobalCooldown.blockType}`);
-      res.writeHead(302, { Location: linkErrorRedirect('rate_limited', activeGlobalCooldown.remainingSeconds) });
-      res.end();
-      return;
+    // For account linking, check if global Discord API cooldown is active.
+    // For login flow (/api/auth/discord/login), do not preemptively block the user from redirecting to discord.com.
+    if (!isLoginFlow) {
+      const activeGlobalCooldown = getActiveDiscordRateLimitCooldown();
+      if (activeGlobalCooldown.isRateLimited) {
+        console.warn(`[DISCORD AUTH] Connect start blocked by active Discord rate limit cooldown (${activeGlobalCooldown.remainingSeconds}s remaining). Block type: ${activeGlobalCooldown.blockType}`);
+        res.writeHead(302, { Location: linkErrorRedirect('rate_limited', activeGlobalCooldown.remainingSeconds) });
+        res.end();
+        return;
+      }
     }
 
     const ipLimit = checkRateLimit('discord_connect_ip:' + clientIp, 30, 10 * 60 * 1000);
@@ -4026,8 +4048,12 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           clientRedirectCode = 'invalid_client';
         } else if (tokenRes.status === 403 || tokenRes.status === 429) {
           clientRedirectCode = tokenRes.status === 429 ? 'rate_limited' : 'blocked';
-          const headerRetry = analysis.retryAfter;
+          const headerRetry = analysis.retryAfter || analysis.parsedJson?.retry_after;
           retryAfterVal = headerRetry ? (parseInt(headerRetry, 10) || 60) : 60;
+          if (retryAfterVal > 10000) {
+            retryAfterVal = Math.ceil(retryAfterVal / 1000);
+          }
+          retryAfterVal = Math.min(900, Math.max(1, retryAfterVal));
           recordDiscordRateLimit('oauth2/token', retryAfterVal, analysis.isHtml);
         }
 
@@ -4075,8 +4101,12 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
         let retryAfterVal = null;
         if (userRes.status === 429) {
           clientRedirectCode = 'rate_limited';
-          const headerRetry = analysis.retryAfter;
+          const headerRetry = analysis.retryAfter || analysis.parsedJson?.retry_after;
           retryAfterVal = headerRetry ? (parseInt(headerRetry, 10) || 60) : 60;
+          if (retryAfterVal > 10000) {
+            retryAfterVal = Math.ceil(retryAfterVal / 1000);
+          }
+          retryAfterVal = Math.min(900, Math.max(1, retryAfterVal));
           recordDiscordRateLimit('users/@me', retryAfterVal, analysis.isHtml);
         } else if (userRes.status === 403) {
           clientRedirectCode = 'blocked';
@@ -4253,6 +4283,10 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
           roles: targetUser.roles || [targetUser.role],
           id: targetUser.uid || targetUser.id
         });
+        // Successful login: rollback rate limit hits so normal logins are not penalized
+        rollbackRateLimit('discord_callback_ip:' + clientIp);
+        rollbackRateLimit('discord_connect_ip:' + clientIp);
+
         const safeLoginReturn = getSafeRelativeRedirect(statePayload.returnTo, '/');
         const postLoginPath = getDiscordJoinReturnPath(safeLoginReturn, 'connected');
         res.writeHead(302, {
@@ -4346,6 +4380,11 @@ async function getDiscordConnectionForUser(clientOrPool, userId, discordIdFallba
       }
 
       console.log('[AUTH] Provider link succeeded: discord.');
+      rollbackRateLimit('discord_callback_ip:' + clientIp);
+      rollbackRateLimit('discord_connect_ip:' + clientIp);
+      if (cbUserId) {
+        rollbackRateLimit('discord_callback_user:' + cbUserId);
+      }
 
       // Notify Discord bot to synchronize tournament access if bot webhook or sync URL is configured
       const botSyncUrl = process.env.DISCORD_BOT_SYNC_URL || (process.env.PORT ? `http://127.0.0.1:${process.env.PORT}/api/bot/sync/user` : null);

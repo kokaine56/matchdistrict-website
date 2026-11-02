@@ -386,10 +386,11 @@ function Profile({ onNavigate, selectedUserProfile }) {
       } else if (discordParam === 'error') {
         setShowToast(true);
         if (errCode === 'rate_limited') {
-          const retrySec = Number(searchParams.get('retry_after')) || 60;
-          const minutes = Math.max(1, Math.ceil(retrySec / 60));
+          let retrySec = Number(searchParams.get('retry_after')) || 60;
+          if (retrySec > 10000) retrySec = Math.ceil(retrySec / 1000);
+          const minutes = Math.min(15, Math.max(1, Math.ceil(retrySec / 60)));
           try {
-            sessionStorage.setItem('discord_retry_until', String(Date.now() + (retrySec * 1000)));
+            sessionStorage.setItem('discord_retry_until', String(Date.now() + (minutes * 60 * 1000)));
           } catch {
             /* ignore storage error */
           }

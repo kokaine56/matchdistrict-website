@@ -33,15 +33,23 @@ export function createAccountSecurity({
   const abuse = createVerificationAbuseGuard({ secret });
 
   const getRequestIp = (req) => {
-    const remote = req.socket?.remoteAddress || '127.0.0.1';
-    const trustProxy = process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY === '1';
-    if (!trustProxy) return remote;
-    const forwarded = req.headers['x-forwarded-for'];
+    if (!req) return '127.0.0.1';
+    const cfIp = req.headers?.['cf-connecting-ip'];
+    if (cfIp && typeof cfIp === 'string') {
+      const trimmed = cfIp.trim();
+      if (trimmed) return trimmed;
+    }
+    const realIp = req.headers?.['x-real-ip'];
+    if (realIp && typeof realIp === 'string') {
+      const trimmed = realIp.trim();
+      if (trimmed) return trimmed;
+    }
+    const forwarded = req.headers?.['x-forwarded-for'];
     if (forwarded) {
       const first = String(forwarded).split(',').map((s) => s.trim()).filter(Boolean)[0];
       if (first) return first;
     }
-    return remote;
+    return req.socket?.remoteAddress || '127.0.0.1';
   };
 
   const sendJson = (res, status, payload) => {
