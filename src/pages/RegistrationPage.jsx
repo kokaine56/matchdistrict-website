@@ -131,8 +131,8 @@ function getPaymentAppLabel(appIdOrName) {
   if (!appIdOrName) return 'Select payment app'
   const found = UPI_APPS.find(
     a => a.id.toLowerCase() === appIdOrName.toLowerCase() ||
-         a.name.toLowerCase() === appIdOrName.toLowerCase() ||
-         a.label.toLowerCase() === appIdOrName.toLowerCase()
+      a.name.toLowerCase() === appIdOrName.toLowerCase() ||
+      a.label.toLowerCase() === appIdOrName.toLowerCase()
   )
   return found ? found.label : appIdOrName
 }
@@ -191,7 +191,7 @@ function PaymentAppDropdown({ value, onChange, error }) {
 
   const selectedApp = UPI_APPS.find(
     a => a.id.toLowerCase() === (value || '').toLowerCase() ||
-         a.name.toLowerCase() === (value || '').toLowerCase()
+      a.name.toLowerCase() === (value || '').toLowerCase()
   )
 
   const handleKeyDown = (e) => {
@@ -229,13 +229,12 @@ function PaymentAppDropdown({ value, onChange, error }) {
         aria-labelledby="upi-app-select-label upi-app-dropdown-btn"
         onClick={handleToggle}
         onKeyDown={handleKeyDown}
-        className={`w-full bg-surface-container-low border ${
-          error
+        className={`w-full bg-surface-container-low border ${error
             ? 'border-error ring-1 ring-error/30'
             : isOpen
-            ? 'border-primary ring-2 ring-primary/20'
-            : 'border-outline-variant/30 hover:border-outline-variant/60'
-        } rounded-xl px-4 py-3 text-sm flex items-center justify-between text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer shadow-sm`}
+              ? 'border-primary ring-2 ring-primary/20'
+              : 'border-outline-variant/30 hover:border-outline-variant/60'
+          } rounded-xl px-4 py-3 text-sm flex items-center justify-between text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer shadow-sm`}
       >
         <span className="flex items-center gap-3 min-w-0">
           {selectedApp ? (
@@ -259,9 +258,8 @@ function PaymentAppDropdown({ value, onChange, error }) {
           ref={listboxRef}
           role="listbox"
           aria-labelledby="upi-app-select-label"
-          className={`absolute left-0 right-0 z-50 bg-surface-container-high border border-outline-variant/40 rounded-xl shadow-2xl py-1.5 max-h-60 overflow-y-auto backdrop-blur-xl transition-all ${
-            openUpwards ? 'bottom-[calc(100%+6px)]' : 'top-[calc(100%+6px)]'
-          }`}
+          className={`absolute left-0 right-0 z-50 bg-surface-container-high border border-outline-variant/40 rounded-xl shadow-2xl py-1.5 max-h-60 overflow-y-auto backdrop-blur-xl transition-all ${openUpwards ? 'bottom-[calc(100%+6px)]' : 'top-[calc(100%+6px)]'
+            }`}
         >
           {UPI_APPS.map((app) => {
             const isSelected = selectedApp?.id === app.id
@@ -275,11 +273,10 @@ function PaymentAppDropdown({ value, onChange, error }) {
                   onChange(app.id)
                   setIsOpen(false)
                 }}
-                className={`w-full px-3.5 py-2.5 flex items-center justify-between gap-3 text-sm transition-colors text-left cursor-pointer ${
-                  isSelected
+                className={`w-full px-3.5 py-2.5 flex items-center justify-between gap-3 text-sm transition-colors text-left cursor-pointer ${isSelected
                     ? 'bg-primary/15 text-primary font-bold'
                     : 'text-on-surface-variant hover:bg-surface-variant/70 hover:text-on-background'
-                }`}
+                  }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="w-7 h-7 rounded-lg bg-surface-variant/70 border border-outline-variant/20 flex items-center justify-center shrink-0 p-1">
@@ -576,35 +573,35 @@ function RegistrationPage({ onNavigate }) {
   useEffect(() => {
     if (!currentUser || !tourney || !id) return
     let cancelled = false
-    ;(async () => {
-      try {
-        const token = await getAuthToken()
-        const headers = {}
-        if (token) headers['Authorization'] = `Bearer ${token}`
-        const res = await fetch(`/api/tournaments/${id}/registrations`, {
-          credentials: 'include',
-          headers,
-        })
-        const data = await res.json()
-        if (cancelled) return
-        if (data.success && data.registrations) {
-          const activeStatuses = ['pending', 'pending_payment', 'approved', 'confirmed', 'waitlisted']
-          const myReg = data.registrations.find(r =>
-            r.user_id === currentUser.id && activeStatuses.includes((r.status || '').toLowerCase())
-          )
-          if (myReg) {
-            navigate(`/tournaments/${id}`, { replace: true })
-            return
+      ; (async () => {
+        try {
+          const token = await getAuthToken()
+          const headers = {}
+          if (token) headers['Authorization'] = `Bearer ${token}`
+          const res = await fetch(`/api/tournaments/${id}/registrations`, {
+            credentials: 'include',
+            headers,
+          })
+          const data = await res.json()
+          if (cancelled) return
+          if (data.success && data.registrations) {
+            const activeStatuses = ['pending', 'pending_payment', 'approved', 'confirmed', 'waitlisted']
+            const myReg = data.registrations.find(r =>
+              r.user_id === currentUser.id && activeStatuses.includes((r.status || '').toLowerCase())
+            )
+            if (myReg) {
+              navigate(`/tournaments/${id}`, { replace: true })
+              return
+            }
+            const myRej = data.registrations.find(r =>
+              r.user_id === currentUser.id && ['rejected', 'payment_rejected'].includes((r.status || '').toLowerCase())
+            )
+            if (myRej) {
+              setRejectedReg(myRej)
+            }
           }
-          const myRej = data.registrations.find(r =>
-            r.user_id === currentUser.id && ['rejected', 'payment_rejected'].includes((r.status || '').toLowerCase())
-          )
-          if (myRej) {
-            setRejectedReg(myRej)
-          }
-        }
-      } catch (_) {}
-    })()
+        } catch (_) { }
+      })()
     return () => { cancelled = true }
   }, [currentUser, tourney, id, navigate])
 
@@ -920,18 +917,15 @@ function RegistrationPage({ onNavigate }) {
           </div>
 
           {/* Registration Status */}
-          <div className={`mt-4 p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs ${
-            isPaid
+          <div className={`mt-4 p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs ${isPaid
               ? 'bg-amber-500/10 border-amber-500/25'
               : 'bg-emerald-500/10 border-emerald-500/25'
-          }`}>
+            }`}>
             <div className="flex items-center gap-2.5 min-w-0">
-              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                isPaid ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
-              }`} />
-              <span className={`font-bold truncate ${
-                isPaid ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'
-              }`}>
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isPaid ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                }`} />
+              <span className={`font-bold truncate ${isPaid ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'
+                }`}>
                 {isPaid ? 'Payment Proof Submitted • Pending Review' : 'Registration Confirmed • Slot Secured'}
               </span>
             </div>
@@ -954,11 +948,10 @@ function RegistrationPage({ onNavigate }) {
               </div>
               <div className="flex items-center justify-between p-3 gap-3">
                 <span className="text-on-surface-variant font-medium shrink-0">Registration Status</span>
-                <span className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] capitalize ${
-                  (registeredTeam.status || '').toLowerCase() === 'approved'
+                <span className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] capitalize ${(registeredTeam.status || '').toLowerCase() === 'approved'
                     ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
                     : 'bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300'
-                }`}>
+                  }`}>
                   {(registeredTeam.status || '').toLowerCase() === 'approved' ? 'Confirmed' : toMessage(registeredTeam.status || 'pending').replace('_', ' ')}
                 </span>
               </div>
@@ -1311,10 +1304,10 @@ function RegistrationPage({ onNavigate }) {
                 </div>
               </div>
               <div className="bg-white/5 rounded-xl p-6 text-center space-y-4 flex flex-col items-center">
-                
+
                 {/* QR Code Container */}
                 <div className="bg-white p-3 rounded-2xl shadow-[0_0_25px_rgba(59,130,246,0.2)] border border-white/20 hover:scale-102 transition-transform duration-300">
-                  <img 
+                  <img
                     src={tourney.payment_qr_image_url || tourney.payment_qr_url || tourney.qr_code_url || `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(upiLink)}`}
                     alt="Scan to Pay"
                     className="w-[180px] h-[180px] block"
@@ -1397,11 +1390,10 @@ function RegistrationPage({ onNavigate }) {
                           key={app.id || app.name}
                           type="button"
                           onClick={() => handleAppClick(app)}
-                          className={`flex flex-col items-center gap-2 py-2 rounded-xl transition-all duration-200 ${
-                            payment.app === app.id
+                          className={`flex flex-col items-center gap-2 py-2 rounded-xl transition-all duration-200 ${payment.app === app.id
                               ? `ring-2 ${app.ringColor} bg-white/5 scale-105`
                               : 'opacity-70 hover:opacity-100 hover:scale-105'
-                          }`}
+                            }`}
                         >
                           <PaymentAppIcon id={app.id} name={app.name} />
                           <span className="min-w-0 w-full text-center text-[10px] leading-tight font-semibold text-white/70 tracking-wide">{app.name}</span>
@@ -1433,13 +1425,12 @@ function RegistrationPage({ onNavigate }) {
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-white/60">12-Digit UTR / Transaction Reference *</label>
-                  <span className={`text-[11px] font-mono ${
-                    payment.transactionId.trim().length === 12
+                  <span className={`text-[11px] font-mono ${payment.transactionId.trim().length === 12
                       ? 'text-emerald-400 font-bold'
                       : payment.transactionId.trim().length > 0
-                      ? 'text-amber-400'
-                      : 'text-white/40'
-                  }`}>
+                        ? 'text-amber-400'
+                        : 'text-white/40'
+                    }`}>
                     {payment.transactionId.trim().length}/12
                   </span>
                 </div>
@@ -1480,36 +1471,36 @@ function RegistrationPage({ onNavigate }) {
 
               {/* Screenshot is required because the backend records a reviewable payment only with its proof URL. */}
               <div>
-                  <label className="block text-xs font-semibold text-white/60 mb-1.5">Payment Screenshot *</label>
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-white/10 rounded-xl p-6 text-center cursor-pointer hover:border-primary/40 transition-colors"
-                  >
-                    {payment.screenshotPreview ? (
-                      <div className="relative inline-block">
-                        <img src={payment.screenshotPreview} alt="Screenshot preview" className="max-h-48 rounded-lg" />
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setPayment(prev => ({ ...prev, screenshotFile: null, screenshotPreview: null })); }}
-                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center"
-                        >
-                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <svg className="w-8 h-8 mx-auto text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                <label className="block text-xs font-semibold text-white/60 mb-1.5">Payment Screenshot *</label>
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-white/10 rounded-xl p-6 text-center cursor-pointer hover:border-primary/40 transition-colors"
+                >
+                  {payment.screenshotPreview ? (
+                    <div className="relative inline-block">
+                      <img src={payment.screenshotPreview} alt="Screenshot preview" className="max-h-48 rounded-lg" />
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setPayment(prev => ({ ...prev, screenshotFile: null, screenshotPreview: null })); }}
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center"
+                      >
+                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
-                        <p className="text-xs text-white/40">Click to upload screenshot</p>
-                        <p className="text-[10px] text-white/20">JPEG, PNG, WebP, HEIC • Max 10MB</p>
-                      </div>
-                    )}
-                  </div>
-                  <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif" className="hidden" onChange={handleScreenshotChange} />
-                  {paymentErrors.screenshot && <p className="text-red-400 text-xs mt-1">{paymentErrors.screenshot}</p>}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <svg className="w-8 h-8 mx-auto text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <p className="text-xs text-white/40">Click to upload screenshot</p>
+                      <p className="text-[10px] text-white/20">JPEG, PNG, WebP, HEIC • Max 10MB</p>
+                    </div>
+                  )}
+                </div>
+                <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif" className="hidden" onChange={handleScreenshotChange} />
+                {paymentErrors.screenshot && <p className="text-red-400 text-xs mt-1">{paymentErrors.screenshot}</p>}
               </div>
 
             </div>
@@ -1766,38 +1757,38 @@ function RegistrationPage({ onNavigate }) {
                 </p>
               ) : (
                 <>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-primary/10 border border-primary/30 rounded-xl p-3.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="material-symbols-outlined text-primary text-base">bookmark_add</span>
-                    <span className="text-[10px] font-bold text-white/80 uppercase tracking-wider">Use a saved squad</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-primary/10 border border-primary/30 rounded-xl p-3.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="material-symbols-outlined text-primary text-base">bookmark_add</span>
+                      <span className="text-[10px] font-bold text-white/80 uppercase tracking-wider">Use a saved squad</span>
+                    </div>
+                    <select
+                      value={selectedPresetId}
+                      onChange={e => {
+                        const preset = presetsWithStatus.find(p => p.id === e.target.value)
+                        if (preset?.selectable) {
+                          setSelectedPresetId(preset.id)
+                          applyPreset(preset)
+                        }
+                      }}
+                      className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-primary/50 transition-colors disabled:opacity-50"
+                    >
+                      <option value="" disabled>Select a squad to auto-fill…</option>
+                      {presetsWithStatus.map(p => (
+                        <option key={p.id} value={p.id} disabled={!p.selectable}>
+                          {p.team_name || p.preset_name || 'Team'}{p.is_default ? ' (default)' : ''}
+                          {p.disabledReason ? ` (${p.disabledReason})` : ''}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <select
-                    value={selectedPresetId}
-                    onChange={e => {
-                      const preset = presetsWithStatus.find(p => p.id === e.target.value)
-                      if (preset?.selectable) {
-                        setSelectedPresetId(preset.id)
-                        applyPreset(preset)
-                      }
-                    }}
-                    className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-primary/50 transition-colors disabled:opacity-50"
-                  >
-                    <option value="" disabled>Select a squad to auto-fill…</option>
-                    {presetsWithStatus.map(p => (
-                      <option key={p.id} value={p.id} disabled={!p.selectable}>
-                        {p.team_name || p.preset_name || 'Team'}{p.is_default ? ' (default)' : ''}
-                        {p.disabledReason ? ` (${p.disabledReason})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {presetRosterWarning && (
-                  <p className="text-[10px] text-amber-400/90">
-                    {toMessage(presetRosterWarning)} Add more players, or enter the squad manually.
-                  </p>
-                )}
+                  {presetRosterWarning && (
+                    <p className="text-[10px] text-amber-400/90">
+                      {toMessage(presetRosterWarning)} Add more players, or enter the squad manually.
+                    </p>
+                  )}
                 </>
-      )}
+              )}
 
               <div>
                 <label htmlFor="reg-teamName" className="block text-xs font-semibold text-white/60 mb-1.5">Team Name *</label>

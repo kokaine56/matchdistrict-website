@@ -193,6 +193,14 @@ function Homepage({ onNavigate }) {
     }).sort((a, b) => getPopularityScore(b) - getPopularityScore(a)).slice(0, 10)
   }, [tournamentsList, now, getPopularityScore])
 
+  const paidPlazaTournaments = useMemo(() => {
+    return plazaTournaments.filter(t => !t.is_free)
+  }, [plazaTournaments])
+
+  const freePlazaTournaments = useMemo(() => {
+    return plazaTournaments.filter(t => Boolean(t.is_free))
+  }, [plazaTournaments])
+
 
   const renderFeedbacksMarquee = (containerClassName) => {
     const testimonials = [
@@ -300,39 +308,104 @@ function Homepage({ onNavigate }) {
                         </button>
                       </div>
                     </div>
-                  ) : plazaTournaments.length === 0 ? (
-                    <div className="glass-card p-8 sm:p-10 text-center rounded-2xl space-y-3 w-full max-w-2xl mx-auto my-4 shadow-xl bg-surface-container-low/40 backdrop-blur-md animate-in fade-in duration-300">
-                      <span className="material-symbols-outlined text-4xl text-primary animate-pulse" data-icon="stadium">stadium</span>
-                      <h3 className="font-display-lg text-xl sm:text-2xl font-bold text-white tracking-tight">No Tournaments Available</h3>
-                      <p className="font-body-md text-xs sm:text-sm text-on-surface-variant max-w-md mx-auto leading-relaxed">
-                        No upcoming, registration-open, or registration-closed tournaments right now. Check back later or browse the archive for past events.
-                      </p>
-                    </div>
                   ) : (
-                    <div className="-mx-4 sm:-mx-sm md:-mx-lg" style={{ overflowY: 'visible' }}>
-                      <div
-                        className="pb-8 pt-4 scrollbar-hide scroll-pl-1 md:scroll-pl-2 !touch-auto"
-                        style={{ overflowX: 'auto', overflowY: 'visible', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y', width: '100%' }}
-                      >
-                        <div className="flex flex-row gap-4 sm:gap-6 snap-x snap-mandatory pl-4 sm:pl-sm md:pl-lg" style={{ width: 'max-content' }}>
-                          {plazaTournaments.map((t) => (
-                            <div key={t.id} className="snap-start first:ml-3" style={{ flexShrink: 0, minWidth: '150px' }}>
-                              <TournamentCard
-                                id={t.id} title={t.title} game={t.game} status={t.status}
-                                badgeTextColor="text-white"
-                                imgSrc={t.cover_image_url || t.bannerUrl || DEFAULT_BANNER}
-                                imgAlt={t.title} prizePool={t.prize} entryFee={t.entry}
-                                matchType={t.match_type || t.matchType || 'Squad'} perspective={t.perspective || 'TPP'}
-                                slotsTotal={t.slotsTotal} slotsFilled={t.slotsFilled} entryFeeAmount={t.entry_fee_amount}
-                                orgName={t.orgName || "Match District Organizer"}
-                                orgTier={['pro', 'elite', 'basic'].includes((t.orgTier || '').toLowerCase()) ? t.orgTier : 'Pro'}
-                                onNavigate={onNavigate} hasSponsors={t.hasApprovedSponsors || false}
-                                registrationOpenDate={t.registrationOpenDate} registrationCloseDate={t.registrationCloseDate} startDate={t.startDate}
-                                cardColor={t.card_color || t.cardColor || t.theme || 'white'}
-                              />
-                            </div>
-                          ))}
+                    <div className="space-y-6 pt-1 overflow-visible">
+                      {/* Paid Tournaments */}
+                      <div className="space-y-2 overflow-visible">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="font-headline-md text-xs sm:text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                            <span className="w-1.5 h-3.5 bg-primary rounded-full shadow-[0_0_8px_rgba(99,102,241,0.4)]"></span>
+                            Paid Tournaments
+                            <span className="text-[10px] text-on-surface-variant font-normal lowercase tracking-normal">
+                              ({paidPlazaTournaments.length})
+                            </span>
+                          </h3>
                         </div>
+
+                        {paidPlazaTournaments.length > 0 ? (
+                          <div className="-mx-4 sm:-mx-sm md:-mx-lg" style={{ overflowY: 'visible' }}>
+                            <div
+                              className="pb-6 pt-2 scrollbar-hide scroll-pl-1 md:scroll-pl-2 !touch-auto"
+                              style={{ overflowX: 'auto', overflowY: 'visible', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y', width: '100%' }}
+                            >
+                              <div className="flex flex-row gap-4 sm:gap-6 snap-x snap-mandatory pl-4 sm:pl-sm md:pl-lg" style={{ width: 'max-content' }}>
+                                {paidPlazaTournaments.map((t) => (
+                                  <div key={'paid-' + t.id} className="snap-start first:ml-3" style={{ flexShrink: 0, minWidth: '150px' }}>
+                                    <TournamentCard
+                                      id={t.id} title={t.title} game={t.game} status={t.status}
+                                      badgeTextColor="text-white"
+                                      imgSrc={t.cover_image_url || t.bannerUrl || DEFAULT_BANNER}
+                                      imgAlt={t.title} prizePool={t.prize} entryFee={t.entry}
+                                      matchType={t.match_type || t.matchType || 'Squad'} perspective={t.perspective || 'TPP'}
+                                      slotsTotal={t.slotsTotal} slotsFilled={t.slotsFilled} entryFeeAmount={t.entry_fee_amount}
+                                      orgName={t.orgName || "Match District Organizer"}
+                                      orgTier={['pro', 'elite', 'basic'].includes((t.orgTier || '').toLowerCase()) ? t.orgTier : 'Pro'}
+                                      onNavigate={onNavigate} hasSponsors={t.hasApprovedSponsors || false}
+                                      registrationOpenDate={t.registrationOpenDate} registrationCloseDate={t.registrationCloseDate} startDate={t.startDate}
+                                      cardColor={t.card_color || t.cardColor || t.theme || 'white'}
+                                      is_free={false}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-dashed border-outline-variant/20 bg-surface-container-low/30 px-4 py-6 text-center my-1">
+                            <p className="text-xs text-on-surface-variant/70">
+                              No paid tournaments available right now.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Free Tournaments */}
+                      <div className="space-y-2 overflow-visible">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="font-headline-md text-xs sm:text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                            <span className="w-1.5 h-3.5 bg-emerald-400 rounded-full shadow-[0_0_8px_rgba(52,211,153,0.4)]"></span>
+                            Free Tournaments
+                            <span className="text-[10px] text-on-surface-variant font-normal lowercase tracking-normal">
+                              ({freePlazaTournaments.length})
+                            </span>
+                          </h3>
+                        </div>
+
+                        {freePlazaTournaments.length > 0 ? (
+                          <div className="-mx-4 sm:-mx-sm md:-mx-lg" style={{ overflowY: 'visible' }}>
+                            <div
+                              className="pb-6 pt-2 scrollbar-hide scroll-pl-1 md:scroll-pl-2 !touch-auto"
+                              style={{ overflowX: 'auto', overflowY: 'visible', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y', width: '100%' }}
+                            >
+                              <div className="flex flex-row gap-4 sm:gap-6 snap-x snap-mandatory pl-4 sm:pl-sm md:pl-lg" style={{ width: 'max-content' }}>
+                                {freePlazaTournaments.map((t) => (
+                                  <div key={'free-' + t.id} className="snap-start first:ml-3" style={{ flexShrink: 0, minWidth: '150px' }}>
+                                    <TournamentCard
+                                      id={t.id} title={t.title} game={t.game} status={t.status}
+                                      badgeTextColor="text-white"
+                                      imgSrc={t.cover_image_url || t.bannerUrl || DEFAULT_BANNER}
+                                      imgAlt={t.title} prizePool="" entryFee="Free"
+                                      matchType={t.match_type || t.matchType || 'Squad'} perspective={t.perspective || 'TPP'}
+                                      slotsTotal={t.slotsTotal} slotsFilled={t.slotsFilled} entryFeeAmount={0}
+                                      orgName={t.orgName || "Match District Organizer"}
+                                      orgTier={['pro', 'elite', 'basic'].includes((t.orgTier || '').toLowerCase()) ? t.orgTier : 'Pro'}
+                                      onNavigate={onNavigate} hasSponsors={t.hasApprovedSponsors || false}
+                                      registrationOpenDate={t.registrationOpenDate} registrationCloseDate={t.registrationCloseDate} startDate={t.startDate}
+                                      cardColor={t.card_color || t.cardColor || t.theme || 'white'}
+                                      is_free={true}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-dashed border-outline-variant/20 bg-surface-container-low/30 px-4 py-6 text-center my-1">
+                            <p className="text-xs text-on-surface-variant/70">
+                              No free tournaments available right now.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

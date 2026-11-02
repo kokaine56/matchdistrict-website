@@ -27,6 +27,7 @@ function mapTournament(t) {
     title: t.title,
     game: t.game,
     status: t.status || 'upcoming',
+    is_free: Boolean(t.is_free),
     startDate: t.startDate || t.date || null,
     registrationOpenDate: t.registrationOpenDate || t.registration_open_date || null,
     registrationCloseDate: t.registrationCloseDate || t.registration_close_date || null,
@@ -260,12 +261,20 @@ function Tournaments({ onNavigate }) {
       const matchGame = gameFilter === 'All Games' || t.game.toLowerCase() === gameFilter.toLowerCase();
 
       let matchEntry = true;
-      if (entryTypeFilter === 'Free') matchEntry = parseInt(t.entryFeeAmount) === 0;
-      else if (entryTypeFilter === 'Paid') matchEntry = parseInt(t.entryFeeAmount) > 0;
+      if (entryTypeFilter === 'Free') matchEntry = Boolean(t.is_free);
+      else if (entryTypeFilter === 'Paid') matchEntry = !t.is_free;
 
       return matchSearch && matchStatus && matchGame && matchEntry;
     });
   }, [tournaments, searchQuery, statusFilter, gameFilter, entryTypeFilter, now]);
+
+  const paidTournaments = useMemo(() => {
+    return filteredTournaments.filter(t => !t.is_free);
+  }, [filteredTournaments]);
+
+  const freeTournaments = useMemo(() => {
+    return filteredTournaments.filter(t => Boolean(t.is_free));
+  }, [filteredTournaments]);
 
   const capsuleLabel = useMemo(() => {
     const parts = [];
@@ -661,8 +670,8 @@ function Tournaments({ onNavigate }) {
           )}
         </AnimatePresence>
 
-        {/* Tournament Grid */}
-        <section className="space-y-4 pt-2 overflow-visible">
+        {/* Tournament Sections: Paid Tournaments & Free Tournaments */}
+        <section className="space-y-8 pt-2 overflow-visible">
           <div className="flex justify-between items-center text-xs text-on-surface-variant/60 font-semibold">
             <span>Showing {filteredTournaments.length} tournaments</span>
             {hasActiveFilters && (
@@ -673,8 +682,19 @@ function Tournaments({ onNavigate }) {
             )}
           </div>
 
-          <AnimatePresence mode="popLayout">
-            {filteredTournaments.length > 0 ? (
+          {/* Paid Tournaments */}
+          <div className="space-y-3 overflow-visible">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-headline-md text-xs sm:text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                <span className="w-1.5 h-4 bg-primary rounded-full shadow-[0_0_8px_rgba(99,102,241,0.4)]"></span>
+                Paid Tournaments
+                <span className="text-[10px] text-on-surface-variant font-normal lowercase tracking-normal">
+                  ({paidTournaments.length})
+                </span>
+              </h3>
+            </div>
+
+            {paidTournaments.length > 0 ? (
               <div className="-mx-4 sm:-mx-6 lg:-mx-8" style={{ overflowY: 'visible' }}>
                 <div
                   className="pb-8 pt-4 scrollbar-hide scroll-pl-1 md:scroll-pl-2 !touch-auto"
@@ -686,13 +706,13 @@ function Tournaments({ onNavigate }) {
                     width: '100%',
                   }}
                 >
-                  <motion.div
+                  <div
                     className="flex flex-row gap-4 sm:gap-6 snap-x snap-mandatory pl-4 sm:pl-6 lg:pl-8"
                     style={{ width: 'max-content' }}
                   >
-                    {filteredTournaments.map((t) => (
+                    {paidTournaments.map((t) => (
                       <div
-                        key={`explore-${t.id}`}
+                        key={'paid-' + t.id}
                         className="snap-start relative first:ml-3"
                         style={{ flexShrink: 0, minWidth: '150px' }}
                       >
@@ -726,32 +746,101 @@ function Tournaments({ onNavigate }) {
                           hasSponsors={t.hasApprovedSponsors}
                           sponsoredAmount={t.totalSponsorContributions}
                           cardColor={t.card_color || t.cardColor || t.theme || 'white'}
+                          is_free={false}
                         />
                       </div>
                     ))}
-                  </motion.div>
+                  </div>
                 </div>
               </div>
             ) : (
-              <motion.div
-                animate={{ opacity: 1, scale: 1 }}
-                className="bg-surface-container-low/40 p-10 sm:p-12 rounded-2xl text-center space-y-4 max-w-sm mx-auto"
-              >
-                <div className="w-12 h-12 mx-auto rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                  <span className="material-symbols-outlined text-2xl">sports_esports</span>
-                </div>
-                <div className="space-y-1.5">
-                  <h4 className="text-sm font-bold text-white uppercase tracking-wider">No Matches Found</h4>
-                  <p className="text-[11px] text-on-surface-variant/70 leading-relaxed px-2">
-                    No tournaments match your current filters. Try adjusting your search or filter criteria.
-                  </p>
-                </div>
-                <button onClick={handleClearFilters} className="px-5 py-2 bg-primary/15 hover:bg-primary/25 text-primary rounded-xl font-headline-md text-xs font-bold transition-all active:scale-95">
-                  Reset Filters
-                </button>
-              </motion.div>
+              <div className="rounded-2xl border border-dashed border-outline-variant/20 bg-surface-container-low/30 px-4 py-8 text-center my-2">
+                <p className="text-xs text-on-surface-variant/70">
+                  No paid tournaments available right now.
+                </p>
+              </div>
             )}
-          </AnimatePresence>
+          </div>
+
+          {/* Free Tournaments */}
+          <div className="space-y-3 overflow-visible">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-headline-md text-xs sm:text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                <span className="w-1.5 h-4 bg-emerald-400 rounded-full shadow-[0_0_8px_rgba(52,211,153,0.4)]"></span>
+                Free Tournaments
+                <span className="text-[10px] text-on-surface-variant font-normal lowercase tracking-normal">
+                  ({freeTournaments.length})
+                </span>
+              </h3>
+            </div>
+
+            {freeTournaments.length > 0 ? (
+              <div className="-mx-4 sm:-mx-6 lg:-mx-8" style={{ overflowY: 'visible' }}>
+                <div
+                  className="pb-8 pt-4 scrollbar-hide scroll-pl-1 md:scroll-pl-2 !touch-auto"
+                  style={{
+                    overflowX: 'auto',
+                    overflowY: 'visible',
+                    WebkitOverflowScrolling: 'touch',
+                    touchAction: 'pan-x pan-y',
+                    width: '100%',
+                  }}
+                >
+                  <div
+                    className="flex flex-row gap-4 sm:gap-6 snap-x snap-mandatory pl-4 sm:pl-6 lg:pl-8"
+                    style={{ width: 'max-content' }}
+                  >
+                    {freeTournaments.map((t) => (
+                      <div
+                        key={'free-' + t.id}
+                        className="snap-start relative first:ml-3"
+                        style={{ flexShrink: 0, minWidth: '150px' }}
+                      >
+                        {isAdmin && (
+                          <TournamentPromotionControl
+                            promotion={promotionByTournamentId.get(t.id) || null}
+                            onManage={() => openPromotionManager(t)}
+                          />
+                        )}
+                        <TournamentCard
+                          id={t.id}
+                          title={t.title}
+                          game={t.game}
+                          status={t.status}
+                          badgeTextColor="text-white"
+                          imgSrc={t.cover_image_url || t.coverImage || t.bannerUrl}
+                          imgAlt={t.title}
+                          prizePool=""
+                          entryFee="Free"
+                          matchType={t.match_type}
+                          perspective={t.perspective}
+                          slotsTotal={t.slotsTotal}
+                          slotsFilled={t.slotsFilled}
+                          entryFeeAmount={0}
+                          orgName={t.orgName}
+                          orgTier={t.orgTier}
+                          onNavigate={onNavigate}
+                          registrationOpenDate={t.registrationOpenDate}
+                          registrationCloseDate={t.registrationCloseDate}
+                          startDate={t.startDate}
+                          hasSponsors={t.hasApprovedSponsors}
+                          sponsoredAmount={t.totalSponsorContributions}
+                          cardColor={t.card_color || t.cardColor || t.theme || 'white'}
+                          is_free={true}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-outline-variant/20 bg-surface-container-low/30 px-4 py-8 text-center my-2">
+                <p className="text-xs text-on-surface-variant/70">
+                  No free tournaments available right now.
+                </p>
+              </div>
+            )}
+          </div>
         </section>
 
       </main>

@@ -238,3 +238,4 @@ test('End-to-End Free Tournament Registration Flow', async () => {
   assert.equal(paidRegRes.body.registration.status, 'pending_payment', 'Paid tournament initial status must be pending_payment');
   assert.equal(paidRegRes.body.registration.discord_verification_code, null, 'Paid tournament must not generate verification code before payment approval');
 });
+
