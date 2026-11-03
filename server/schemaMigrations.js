@@ -597,6 +597,7 @@ export async function runSchemaMigrations(clientOrPool) {
       ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS room_credentials_release_minutes INTEGER DEFAULT 15;
       ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS social_links TEXT DEFAULT '{}';
       ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS discord_invite_url TEXT DEFAULT '';
+      ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS discord_invite TEXT DEFAULT '';
       ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS is_free BOOLEAN DEFAULT false;
 
       CREATE TABLE IF NOT EXISTS tournament_registrations (

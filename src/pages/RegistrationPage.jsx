@@ -732,9 +732,8 @@ function RegistrationPage({ onNavigate }) {
         }
         if (!sessionRes.ok || !sessionData.success) {
           const raw = sessionData?.message || sessionData?.error || ''
-          const isSql = /relation|column|syntax error|violates|does not exist|select|update|insert/i.test(raw)
-          const refStr = sessionData?.ref ? ` (Ref: ${sessionData.ref})` : ''
-          setServerError(isSql ? `Could not save, please try again.${refStr}` : `${raw || 'Registration failed. Please try again.'}${refStr}`)
+          const refStr = sessionData?.ref && !raw.includes(sessionData.ref) ? ` (Ref: ${sessionData.ref})` : ''
+          setServerError(`${raw || 'Registration failed. Please try again.'}${refStr}`)
           return
         }
 
@@ -771,9 +770,8 @@ function RegistrationPage({ onNavigate }) {
           setStep('success')
         } else {
           const raw = regData?.message || regData?.error || ''
-          const isSql = /relation|column|syntax error|violates|does not exist|select|update|insert/i.test(raw)
-          const refStr = regData?.ref ? ` (Ref: ${regData.ref})` : ''
-          setServerError(isSql ? `Could not save, please try again.${refStr}` : `${raw || 'Registration failed. Please try again.'}${refStr}`)
+          const refStr = regData?.ref && !raw.includes(regData.ref) ? ` (Ref: ${regData.ref})` : ''
+          setServerError(`${raw || 'Registration failed. Please try again.'}${refStr}`)
         }
       }
     } catch (err) {

@@ -1155,6 +1155,8 @@ async function initDb() {
         ALTER TABLE users ADD COLUMN IF NOT EXISTS early_access BOOLEAN DEFAULT FALSE;
         ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS "entryFee" VARCHAR(100);
         ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS is_free BOOLEAN DEFAULT false;
+        ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS discord_invite_url TEXT DEFAULT '';
+        ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS discord_invite TEXT DEFAULT '';
         ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
         ALTER TABLE organiser_followers ADD COLUMN IF NOT EXISTS organiser_id VARCHAR(50);
         ALTER TABLE organiser_followers ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
@@ -14621,7 +14623,7 @@ const server = http.createServer(async (req, res) => {
 
           // Verify tournament is still open
           const tRes = await client.query(
-            'SELECT t.id, t.title, t."slotsTotal", COALESCE(rc.slots_filled, 0) AS "slotsFilled", t.entry_fee_amount, t."registrationCloseDate", t.teams_per_group, t.unique_amount_suffix_enabled, t.is_free, t.discord_invite_url, t.discord_invite FROM tournaments t LEFT JOIN registered_tournament_team_counts rc ON rc.tournament_id = t.id WHERE t.id = $1::varchar',
+            'SELECT t.id, t.title, t."slotsTotal", COALESCE(rc.slots_filled, 0) AS "slotsFilled", t.entry_fee_amount, t."registrationCloseDate", t.teams_per_group, t.unique_amount_suffix_enabled, t.is_free, t.discord_invite_url FROM tournaments t LEFT JOIN registered_tournament_team_counts rc ON rc.tournament_id = t.id WHERE t.id = $1::varchar',
             [session.tournament_id]
           );
           if (tRes.rows.length === 0) {
@@ -14923,7 +14925,7 @@ const server = http.createServer(async (req, res) => {
             payment: paymentRecord,
             requiresPayment: isPaid,
             amount_to_pay: isPaid ? amountToPay : null,
-            discord_invite_url: tournament.discord_invite_url || tournament.discord_invite || null
+            discord_invite_url: tournament.discord_invite_url || null
           }));
         } catch (err) {
           if (client) {
@@ -15015,7 +15017,7 @@ const server = http.createServer(async (req, res) => {
 
             // Transaction row-lock on tournament row (PAY-004 concurrency control)
             const tRes = await regClient.query(
-              'SELECT title, "slotsTotal", "slotsFilled", "entry_fee_amount", "registrationCloseDate", unique_amount_suffix_enabled, is_free, teams_per_group, discord_invite_url, discord_invite FROM tournaments WHERE id = $1::varchar FOR UPDATE',
+              'SELECT title, "slotsTotal", "slotsFilled", "entry_fee_amount", "registrationCloseDate", unique_amount_suffix_enabled, is_free, teams_per_group, discord_invite_url FROM tournaments WHERE id = $1::varchar FOR UPDATE',
               [id]
             );
             if (tRes.rows.length === 0) {
@@ -15186,17 +15188,18 @@ const server = http.createServer(async (req, res) => {
             requiresPayment: isPaid,
             amount_to_pay: isPaid ? amountToPay : null,
             predicted_group: predictedGroup,
-            discord_invite_url: t.discord_invite_url || t.discord_invite || null
+            discord_invite_url: t.discord_invite_url || null
           }));
         } catch (err) {
           const ref = makeErrorRef();
+          console.error(`[Register Error] Ref:${ref} - Error registering team for tournament "${id}":`, err);
           logErrorWithRef(ref, 'POST /api/tournaments/:id/register', err, 'register_team');
-          const isSchemaError = err.message && err.message.includes('does not exist');
+          const isSchemaError = err.message && (err.message.includes('does not exist') || err.message.includes('column') || err.message.includes('relation'));
           const message = isSchemaError
-            ? `Registration service configuration error. Please contact support. (Ref: ${ref})`
-            : `Could not complete registration. Please try again. (Ref: ${ref})`;
+            ? `Registration service configuration error: ${err.message}. Please contact support. (Ref: ${ref})`
+            : (err.message ? `${err.message} (Ref: ${ref})` : `Could not complete registration. Please try again. (Ref: ${ref})`);
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', ref, message }));
+          res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', ref, message, detail: err.message }));
         }
       });
       return;

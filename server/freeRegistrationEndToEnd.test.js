@@ -239,3 +239,20 @@ test('End-to-End Free Tournament Registration Flow', async () => {
   assert.equal(paidRegRes.body.registration.discord_verification_code, null, 'Paid tournament must not generate verification code before payment approval');
 });
 
+test('Tournament Registration Query Schema Safety', async () => {
+  const fs = await import('node:fs');
+  const serverCode = fs.readFileSync('matchdistrict-website/server.js', 'utf8');
+
+  // Verify POST /api/tournaments/:id/register SELECT query does NOT select non-existent discord_invite
+  const expectedQuery = 'SELECT title, "slotsTotal", "slotsFilled", "entry_fee_amount", "registrationCloseDate", unique_amount_suffix_enabled, is_free, teams_per_group, discord_invite_url FROM tournaments WHERE id = $1::varchar FOR UPDATE';
+  assert.ok(serverCode.includes(expectedQuery), 'Registration row-lock query must select existing columns without discord_invite');
+
+  // Verify server startup / schema migration includes discord_invite as safe additive column
+  const schemaCode = fs.readFileSync('matchdistrict-website/server/schemaMigrations.js', 'utf8');
+  assert.ok(schemaCode.includes("ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS discord_invite TEXT DEFAULT '';"),
+    'schemaMigrations.js must include additive migration for discord_invite');
+  assert.ok(serverCode.includes("ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS discord_invite TEXT DEFAULT '';"),
+    'server.js must include additive migration for discord_invite');
+});
+
+
