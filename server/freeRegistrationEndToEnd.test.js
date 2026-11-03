@@ -253,6 +253,23 @@ test('Tournament Registration Query Schema Safety', async () => {
     'schemaMigrations.js must include additive migration for discord_invite');
   assert.ok(serverCode.includes("ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS discord_invite TEXT DEFAULT '';"),
     'server.js must include additive migration for discord_invite');
+
+  // Verify variable scoping in server.js registration route: t must be declared in outer scope
+  assert.ok(serverCode.includes('let t = null;'), 'server.js must declare t in outer scope to prevent ReferenceError');
+  assert.ok(serverCode.includes('t = tRes.rows[0];'), 'server.js must assign to outer t variable');
+
+  // Verify RegistrationPage.jsx: no undefined setPredictedGroup and redirects on success
+  const regPageCode = fs.readFileSync('matchdistrict-website/src/pages/RegistrationPage.jsx', 'utf8');
+  assert.equal(regPageCode.includes('setPredictedGroup'), false, 'RegistrationPage must not reference undefined setPredictedGroup');
+  assert.ok(regPageCode.includes("navigate(`/tournaments/${id}?registered=true`"),
+    'RegistrationPage must redirect to tournament details on free registration success');
+
+  // Verify TournamentDetail.jsx: handles registration success toast and auto-refreshes data
+  const detailCode = fs.readFileSync('matchdistrict-website/src/pages/TournamentDetail.jsx', 'utf8');
+  assert.ok(detailCode.includes('isRegisteredQuery') && detailCode.includes('isRegisteredState'),
+    'TournamentDetail must listen for registration success redirect');
+  assert.ok(detailCode.includes('loadTournament()') && detailCode.includes('fetchMyRegistration()') && detailCode.includes('fetchSlots()'),
+    'TournamentDetail must immediately refresh tournament, registration, and slots');
 });
 
 

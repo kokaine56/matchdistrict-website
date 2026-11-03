@@ -15012,6 +15012,9 @@ const server = http.createServer(async (req, res) => {
           let entryFeeAmount = 0;
           let isPaid = false;
           let amountToPay = 0;
+          let t = null;
+          let status = 'approved';
+          let assignedCode = null;
           try {
             await regClient.query('BEGIN');
 
@@ -15027,7 +15030,7 @@ const server = http.createServer(async (req, res) => {
               regClient.release();
               return;
             }
-            const t = tRes.rows[0];
+            t = tRes.rows[0];
 
             // Check duplicate team name (exclude current orphan if retrying)
             let nameQuery = 'SELECT id FROM tournament_registrations WHERE tournament_id = $1 AND LOWER(team_name) = LOWER($2) AND status NOT IN (\'cancelled\', \'expired\', \'rejected\', \'PAYMENT_REJECTED\')';
@@ -15083,7 +15086,7 @@ const server = http.createServer(async (req, res) => {
               return;
             }
 
-            let status = isPaid ? 'pending_payment' : 'approved';
+            status = isPaid ? 'pending_payment' : 'approved';
 
             let slotNumber = data.slot_number ? parseInt(data.slot_number) : null;
             if (slotNumber) {
@@ -15136,7 +15139,7 @@ const server = http.createServer(async (req, res) => {
               );
             }
 
-            let assignedCode = null;
+            assignedCode = null;
             if (!isPaid) {
               try {
                 assignedCode = await assignVerificationCode(regClient, targetRegId);
@@ -15165,14 +15168,14 @@ const server = http.createServer(async (req, res) => {
 
           await reconcileTournamentSlots(pool, id);
 
-          const tpgPredicted = normalizeTeamsPerGroup(t.teams_per_group, 16);
+          const tpgPredicted = normalizeTeamsPerGroup(t?.teams_per_group, 16);
           const confirmedCountRes = await pool.query(
             `SELECT COUNT(*) FROM tournament_registrations
            WHERE tournament_id = $1::varchar AND status IN ('approved', 'confirmed', 'VERIFIED_BY_HOST', 'verified_by_host')`,
             [id]
           );
           const confirmedCount = parseInt(confirmedCountRes.rows[0]?.count) || 0;
-          const predictedGroup = predictedGroupFor(confirmedCount, t.slotsTotal, tpgPredicted);
+          const predictedGroup = predictedGroupFor(confirmedCount, t?.slotsTotal, tpgPredicted);
 
           const returnReg = dbRes?.rows?.[0] ? { ...dbRes.rows[0] } : {};
           if (assignedCode) {
@@ -15188,7 +15191,7 @@ const server = http.createServer(async (req, res) => {
             requiresPayment: isPaid,
             amount_to_pay: isPaid ? amountToPay : null,
             predicted_group: predictedGroup,
-            discord_invite_url: t.discord_invite_url || null
+            discord_invite_url: t?.discord_invite_url || null
           }));
         } catch (err) {
           const ref = makeErrorRef();

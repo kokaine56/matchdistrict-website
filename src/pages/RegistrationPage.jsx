@@ -759,15 +759,26 @@ function RegistrationPage({ onNavigate }) {
 
         if (regData.already_registered) {
           setRegisteredTeam(regData.registration)
-          setStep('success')
+          navigate(`/tournaments/${id}?registered=true`, {
+            replace: true,
+            state: {
+              registrationSuccess: true,
+              message: 'You are already registered for this tournament.'
+            }
+          })
           return
         }
 
         if (regRes.ok && regData.success) {
           setRegisteredTeam(regData.registration)
-          setAmountToPay(regData.amount_to_pay || null)
-          setPredictedGroup(regData.predicted_group || null)
-          setStep('success')
+          navigate(`/tournaments/${id}?registered=true`, {
+            replace: true,
+            state: {
+              registrationSuccess: true,
+              message: 'Registration confirmed! Your slot is secured.'
+            }
+          })
+          return
         } else {
           const raw = regData?.message || regData?.error || ''
           const refStr = regData?.ref && !raw.includes(regData.ref) ? ` (Ref: ${regData.ref})` : ''

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import Header from '../components/Header.jsx';
 import LoadingScreen from '../components/LoadingScreen.jsx';
@@ -112,6 +112,7 @@ function getDetailPageTheme(themeKey) {
 
 function TournamentDetail({ onNavigate, tournamentId }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [sponsorList, setSponsorList] = useState([]);
@@ -199,6 +200,35 @@ function TournamentDetail({ onNavigate, tournamentId }) {
     }
   }, []);
 
+  // Handle redirect after tournament registration
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const isRegisteredQuery = params.get('registered') === 'true';
+      const isRegisteredState = location.state?.registrationSuccess;
+      const successMsg = location.state?.message || (isRegisteredQuery ? 'Registration confirmed! Your slot is secured.' : null);
+
+      if (isRegisteredState || isRegisteredQuery) {
+        setToastMessage(successMsg || 'Registration confirmed! Your slot is secured.');
+        setShowToast(true);
+        const timer = setTimeout(() => setShowToast(false), 5000);
+
+        // Immediate refresh of tournament details, user registration, and slots
+        loadTournament();
+        fetchMyRegistration();
+        fetchSlots();
+
+        // Clean up URL query param and navigation state
+        try {
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        } catch (_) {}
+
+        return () => clearTimeout(timer);
+      }
+    } catch (_) {}
+  }, [location.state, loadTournament, fetchMyRegistration, fetchSlots]);
+
   const getCardType = (amt) => {
     if (amt >= 1000) return 'OBSIDIAN_ELITE';
     if (amt >= 500) return 'DIAMOND_PREFERRED';
@@ -260,6 +290,7 @@ function TournamentDetail({ onNavigate, tournamentId }) {
 
   // Organizer profile state
   const [orgProfile, setOrgProfile] = useState(null);
+  const [followerCount, setFollowerCount] = useState(0);
 
   // Countdown state
   const [countdown, setCountdown] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, label: '', active: false, type: '' });
