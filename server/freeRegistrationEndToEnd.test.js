@@ -270,6 +270,14 @@ test('Tournament Registration Query Schema Safety', async () => {
     'TournamentDetail must listen for registration success redirect');
   assert.ok(detailCode.includes('loadTournament()') && detailCode.includes('fetchMyRegistration()') && detailCode.includes('fetchSlots()'),
     'TournamentDetail must immediately refresh tournament, registration, and slots');
+
+  // Verify compact Discord Verification card UI in TournamentDetail.jsx
+  assert.ok(detailCode.includes('Discord Verification'), 'Must include Discord Verification title');
+  assert.ok(detailCode.includes('rounded-full bg-red-500') && detailCode.includes('Pending'), 'Must include small red dot Pending indicator');
+  assert.ok(detailCode.includes('rounded-full bg-emerald-500') && detailCode.includes('Verified'), 'Must include small green dot Verified indicator');
+  assert.ok(detailCode.includes('VERIFICATION CODE'), 'Must display small VERIFICATION CODE label');
+  assert.ok(detailCode.includes("Open your tournament's Discord verification channel and submit this code. The bot will guide you through teammate verification."),
+    'Must display exact concise verification instructions');
 });
 
 

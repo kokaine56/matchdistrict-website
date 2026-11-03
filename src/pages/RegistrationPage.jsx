@@ -1010,68 +1010,89 @@ function RegistrationPage({ onNavigate }) {
           </div>
 
           {/* Discord Tournament Verification Card */}
-          <div className="mt-4 p-4 rounded-xl border border-indigo-500/30 bg-indigo-500/10 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs uppercase tracking-wider">
-                <span className="material-symbols-outlined text-base">verified_user</span>
-                <span>Discord Verification</span>
-              </div>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                Pending verification
-              </span>
-            </div>
-
-            {registeredTeam?.discord_verification_code ? (
-              <>
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-surface-container-high/90 p-3.5 rounded-xl border border-outline-variant/30">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-on-surface-variant font-medium uppercase tracking-wider">Verification Code</span>
-                    <span className="font-mono text-2xl font-black tracking-widest text-primary mt-0.5 select-all">
-                      {registeredTeam.discord_verification_code}
-                    </span>
+          {(() => {
+            if (!registeredTeam?.discord_verification_code) {
+              return (
+                <div className="mt-3 p-3 rounded-lg border border-outline-variant/40 bg-surface-container-low/50 dark:bg-surface-container-lowest/60 text-xs text-on-surface-variant">
+                  <p className="font-medium">Your verification code will appear here once your payment is approved.</p>
+                </div>
+              );
+            }
+            const isVerified = registeredTeam.discord_verification_status === 'verified' || registeredTeam.discord_verified;
+            const discordInvite = registeredTeam?.discord_invite_url || tourney?.discord_invite_url || tourney?.social_links?.discord;
+            return (
+              <div className="mt-3 p-3 sm:p-3.5 rounded-lg border border-outline-variant/40 bg-surface-container-low/50 dark:bg-surface-container-lowest/60 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                    <span className="material-symbols-outlined text-sm text-indigo-400 shrink-0">verified_user</span>
+                    <span>Discord Verification</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!registeredTeam?.discord_verification_code) return;
-                      navigator.clipboard.writeText(String(registeredTeam.discord_verification_code));
-                      setCopiedVerCode(true);
-                      setTimeout(() => setCopiedVerCode(false), 2000);
-                    }}
-                    className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-on-primary font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-md shadow-primary/20 cursor-pointer shrink-0"
-                    title="Copy Verification Code"
-                  >
-                    <span className="material-symbols-outlined text-base leading-none">
-                      {copiedVerCode ? 'check' : 'content_copy'}
+                  {isVerified ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      Verified
                     </span>
-                    <span>{copiedVerCode ? 'Copied Code!' : 'Copy Code'}</span>
-                  </button>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-400 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                      Pending
+                    </span>
+                  )}
                 </div>
 
-                <p className="text-xs text-on-surface-variant leading-relaxed">
-                  Go to the verification channel of this tournament's Discord server, and paste this code. The bot will then ask you to tag your remaining teammates.
-                </p>
+                {isVerified ? (
+                  <p className="text-xs text-emerald-400 font-medium">
+                    Your team is verified on Discord and confirmed for this tournament.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between gap-3 pt-0.5">
+                      <div className="min-w-0">
+                        <span className="text-[10px] uppercase tracking-wider font-semibold text-white/60 block">VERIFICATION CODE</span>
+                        <span className="font-mono text-base sm:text-lg font-bold tracking-wider text-primary select-all truncate block">
+                          {registeredTeam.discord_verification_code}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!registeredTeam?.discord_verification_code) return;
+                          navigator.clipboard.writeText(String(registeredTeam.discord_verification_code));
+                          setCopiedVerCode(true);
+                          setTimeout(() => setCopiedVerCode(false), 2000);
+                        }}
+                        className="px-2.5 py-1 text-xs font-medium rounded-md border border-white/10 bg-white/5 hover:bg-white/10 text-white transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+                        title="Copy Verification Code"
+                      >
+                        <span className="material-symbols-outlined text-xs leading-none">
+                          {copiedVerCode ? 'check' : 'content_copy'}
+                        </span>
+                        <span>{copiedVerCode ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    </div>
 
-                {(registeredTeam?.discord_invite_url || tourney?.discord_invite_url || tourney?.social_links?.discord) && (
-                  <div className="pt-1">
-                    <a
-                      href={registeredTeam?.discord_invite_url || tourney?.discord_invite_url || tourney?.social_links?.discord}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-400 hover:text-indigo-300 hover:underline transition-colors"
-                    >
-                      <span className="material-symbols-outlined text-sm">open_in_new</span>
-                      <span>Join Tournament Discord Server</span>
-                    </a>
-                  </div>
+                    <p className="text-xs text-white/70 leading-relaxed">
+                      Open your tournament's Discord verification channel and submit this code. The bot will guide you through teammate verification.
+                    </p>
+
+                    {discordInvite && (
+                      <div className="pt-0.5">
+                        <a
+                          href={discordInvite}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-indigo-400 hover:text-indigo-300 hover:underline transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-xs">open_in_new</span>
+                          <span>Join Discord Server</span>
+                        </a>
+                      </div>
+                    )}
+                  </>
                 )}
-              </>
-            ) : (
-              <div className="p-3 bg-surface-container-high/50 rounded-lg border border-outline-variant/20 text-xs text-on-surface-variant">
-                <p className="font-medium">Your code will appear here once your payment is approved.</p>
               </div>
-            )}
-          </div>
+            );
+          })()}
 
           {/* Primary Action */}
           <div className="mt-6">
