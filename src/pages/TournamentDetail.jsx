@@ -200,35 +200,6 @@ function TournamentDetail({ onNavigate, tournamentId }) {
     }
   }, []);
 
-  // Handle redirect after tournament registration
-  useEffect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const isRegisteredQuery = params.get('registered') === 'true';
-      const isRegisteredState = location.state?.registrationSuccess;
-      const successMsg = location.state?.message || (isRegisteredQuery ? 'Registration confirmed! Your slot is secured.' : null);
-
-      if (isRegisteredState || isRegisteredQuery) {
-        setToastMessage(successMsg || 'Registration confirmed! Your slot is secured.');
-        setShowToast(true);
-        const timer = setTimeout(() => setShowToast(false), 5000);
-
-        // Immediate refresh of tournament details, user registration, and slots
-        loadTournament();
-        fetchMyRegistration();
-        fetchSlots();
-
-        // Clean up URL query param and navigation state
-        try {
-          const cleanUrl = window.location.pathname;
-          window.history.replaceState({}, document.title, cleanUrl);
-        } catch (_) {}
-
-        return () => clearTimeout(timer);
-      }
-    } catch (_) {}
-  }, [location.state, loadTournament, fetchMyRegistration, fetchSlots]);
-
   const getCardType = (amt) => {
     if (amt >= 1000) return 'OBSIDIAN_ELITE';
     if (amt >= 500) return 'DIAMOND_PREFERRED';
@@ -405,6 +376,35 @@ function TournamentDetail({ onNavigate, tournamentId }) {
   useRefetchOnFocus(fetchMyRegistration, !!tournamentId);
   useRefetchOnFocus(fetchRegistrations, !!tournamentId);
   useRefetchOnFocus(fetchSlots, !!tournamentId);
+
+  // Handle redirect after tournament registration
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const isRegisteredQuery = params.get('registered') === 'true';
+      const isRegisteredState = location.state?.registrationSuccess;
+      const successMsg = location.state?.message || (isRegisteredQuery ? 'Registration confirmed! Your slot is secured.' : null);
+
+      if (isRegisteredState || isRegisteredQuery) {
+        setToastMessage(successMsg || 'Registration confirmed! Your slot is secured.');
+        setShowToast(true);
+        const timer = setTimeout(() => setShowToast(false), 5000);
+
+        // Immediate refresh of tournament details, user registration, and slots
+        loadTournament();
+        fetchMyRegistration();
+        fetchSlots();
+
+        // Clean up URL query param and navigation state
+        try {
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        } catch (_) {}
+
+        return () => clearTimeout(timer);
+      }
+    } catch (_) {}
+  }, [location.state, loadTournament, fetchMyRegistration, fetchSlots]);
 
   // Fetch approved sponsor data for public wall
   const fetchSponsors = useCallback(async () => {
