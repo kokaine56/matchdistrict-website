@@ -33,7 +33,7 @@ export function generateVerificationCode() {
  * @param {string} registrationId
  * @returns {Promise<string>} The assigned 8-character verification code
  */
-export async function assignVerificationCode(clientOrPool, registrationId) {
+export async function assignVerificationCode(clientOrPool, registrationId, { forceNew = false } = {}) {
   if (!registrationId) {
     throw new Error('registrationId is required to assign verification code.');
   }
@@ -45,7 +45,7 @@ export async function assignVerificationCode(clientOrPool, registrationId) {
   if (existingRes.rows.length === 0) {
     throw new Error(`Registration ${registrationId} not found.`);
   }
-  if (existingRes.rows[0].discord_verification_code) {
+  if (existingRes.rows[0].discord_verification_code && !forceNew) {
     return existingRes.rows[0].discord_verification_code;
   }
 
@@ -70,8 +70,12 @@ export async function assignVerificationCode(clientOrPool, registrationId) {
   await clientOrPool.query(
     `UPDATE tournament_registrations
      SET discord_verification_code = $1,
-         discord_verification_status = COALESCE(discord_verification_status, 'pending'),
+         discord_verification_status = 'pending',
          discord_code_used = false,
+         discord_verified = false,
+         discord_captain_id = NULL,
+         discord_member_ids = '[]'::jsonb,
+         discord_verified_at = NULL,
          updated_at = CURRENT_TIMESTAMP
      WHERE id = $2`,
     [assignedCode, registrationId]

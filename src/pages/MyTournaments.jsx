@@ -13,7 +13,8 @@ const REG_STATUS_CONFIG = {
   'pending': { label: 'Pending Verification', bg: 'bg-amber-500 text-white', btnText: 'View Details', group: 'Pending' },
   'pending_payment': { label: 'Pending Verification', bg: 'bg-amber-500 text-white', btnText: 'View Details', group: 'Pending' },
   'waitlisted': { label: 'Waitlisted', bg: 'bg-amber-500/80 text-white', btnText: 'View Details', group: 'Pending' },
-  'rejected': { label: 'Rejected', bg: 'bg-red-500 text-white', btnText: 'View Details', group: 'Rejected' },
+  'rejected': { label: 'Registration Rejected', bg: 'bg-red-500 text-white', btnText: 'View Details', group: 'Rejected' },
+  'payment_rejected': { label: 'Payment Rejected', bg: 'bg-red-500 text-white', btnText: 'View Details', group: 'Rejected' },
   'cancelled': { label: 'Cancelled', bg: 'bg-surface-variant text-on-surface-variant', btnText: 'View Details', group: 'Rejected' },
   'expired': { label: 'Expired', bg: 'bg-surface-variant text-on-surface-variant', btnText: 'View Details', group: 'Rejected' },
 }
@@ -23,7 +24,7 @@ const FILTER_TABS = ['All', 'Registered', 'Pending', 'Rejected']
 const FILTER_STATUSES = {
   Registered: ['approved', 'confirmed'],
   Pending: ['pending', 'pending_payment', 'waitlisted'],
-  Rejected: ['rejected', 'cancelled', 'expired'],
+  Rejected: ['rejected', 'payment_rejected', 'cancelled', 'expired'],
 }
 
 // Mirrors the server's authoritative active-registration set (server.js).
@@ -160,11 +161,13 @@ export default function MyTournaments({ onNavigate }) {
 
       const reg = pickCurrentRegistration(group)
       const regStatus = (reg.status || 'pending').toLowerCase()
+      const isFreeTournament = Boolean(t.is_free) || (parseInt(t.entry_fee_amount) || 0) <= 0
       const isApproved = regStatus === 'approved' || regStatus === 'confirmed'
       const config = REG_STATUS_CONFIG[regStatus] || REG_STATUS_CONFIG.pending
 
       let badgeText = config.label
       let badgeBg = config.bg
+      if (regStatus === 'rejected' || regStatus === 'payment_rejected') badgeText = isFreeTournament ? 'Registration Rejected' : 'Payment Rejected'
 
       if (isApproved) {
         if (reg.squad_waived) {
@@ -188,7 +191,7 @@ export default function MyTournaments({ onNavigate }) {
         startDate: t.startDate || t.start_date || t.date,
         status: t.status
       })
-      const btnState = getRegistrationButtonState({ status: regStatus, rejection_reason: reg.rejection_reason }, lifecycle)
+      const btnState = getRegistrationButtonState({ status: regStatus, rejection_reason: reg.rejection_reason }, lifecycle, { isPaid: !isFreeTournament })
 
       cards.push({
         id: t.id,

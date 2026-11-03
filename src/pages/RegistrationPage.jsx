@@ -438,6 +438,8 @@ function RegistrationPage({ onNavigate }) {
   const [submittedTimeIST, setSubmittedTimeIST] = useState('')
   const [rejectedReg, setRejectedReg] = useState(null)
   const isPaid = !tourney?.is_free && parseInt(tourney?.entry_fee_amount || 0) > 0
+  const rejectedReasonText = rejectedReg?.rejection_reason || (isPaid ? 'Payment verification failed.' : 'Registration rejected.')
+  const visibleRejectedReason = !isPaid && /\bpayment\b/i.test(rejectedReasonText) ? 'Registration rejected.' : rejectedReasonText
   const entryFee = parseInt(tourney?.entry_fee_amount || 0)
 
   useEffect(() => {
@@ -578,26 +580,21 @@ function RegistrationPage({ onNavigate }) {
           const token = await getAuthToken()
           const headers = {}
           if (token) headers['Authorization'] = `Bearer ${token}`
-          const res = await fetch(`/api/tournaments/${id}/registrations`, {
+          const res = await fetch(`/api/tournaments/${id}/my-registration`, {
             credentials: 'include',
             headers,
           })
           const data = await res.json()
           if (cancelled) return
-          if (data.success && data.registrations) {
+          if (data.success && data.registration) {
+            const userRegistration = data.registration
             const activeStatuses = ['pending', 'pending_payment', 'approved', 'confirmed', 'waitlisted']
-            const myReg = data.registrations.find(r =>
-              r.user_id === currentUser.id && activeStatuses.includes((r.status || '').toLowerCase())
-            )
-            if (myReg) {
+            if (activeStatuses.includes((userRegistration.status || '').toLowerCase())) {
               navigate(`/tournaments/${id}`, { replace: true })
               return
             }
-            const myRej = data.registrations.find(r =>
-              r.user_id === currentUser.id && ['rejected', 'payment_rejected'].includes((r.status || '').toLowerCase())
-            )
-            if (myRej) {
-              setRejectedReg(myRej)
+            if (['rejected', 'payment_rejected'].includes((userRegistration.status || '').toLowerCase())) {
+              setRejectedReg(userRegistration)
             }
           }
         } catch (_) { }
@@ -1717,10 +1714,12 @@ function RegistrationPage({ onNavigate }) {
               <div className="flex-1 min-w-0">
                 <h3 className="text-sm font-bold text-rose-300">Previous Submission Rejected</h3>
                 <p className="text-xs text-rose-200/90 mt-1">
-                  Reason: <strong>{rejectedReg.rejection_reason || 'Payment verification failed.'}</strong>
+                  Reason: <strong>{visibleRejectedReason}</strong>
                 </p>
                 <p className="text-[11px] text-white/50 mt-1">
-                  You can re-upload your payment proof with a valid 12-digit UTR to return your team to pending review.
+                  {isPaid
+                    ? 'You can re-upload your payment proof with a valid 12-digit UTR to return your team to pending review.'
+                    : 'You can submit a new registration for this tournament.'}
                 </p>
               </div>
             </div>
@@ -1728,12 +1727,16 @@ function RegistrationPage({ onNavigate }) {
               type="button"
               onClick={() => {
                 setForm(prev => ({ ...prev, teamName: rejectedReg.team_name, captainIgn: rejectedReg.captain }));
-                setStep('payment');
+                if (isPaid) setStep('payment');
+                else {
+                  setRejectedReg(null);
+                  setStep('form');
+                }
               }}
               className="rounded-full px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all flex items-center gap-1.5"
             >
-              <span className="material-symbols-outlined text-sm">upload_file</span>
-              Re-upload Payment Proof
+              <span className="material-symbols-outlined text-sm">{isPaid ? 'upload_file' : 'refresh'}</span>
+              {isPaid ? 'Re-upload Payment Proof' : 'Register Again'}
             </button>
           </div>
         )}

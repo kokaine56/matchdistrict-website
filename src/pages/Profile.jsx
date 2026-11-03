@@ -1719,7 +1719,10 @@ function Profile({ onNavigate, selectedUserProfile }) {
         let result = 'Awaiting Approval';
         if (regStatusRaw === 'approved' || regStatusRaw === 'confirmed' || regStatusRaw === 'CONFIRMED' || regStatusRaw === 'VERIFIED_BY_HOST' || regStatusRaw === 'verified_by_host') result = 'Approved & Registered';
         else if (regStatusRaw === 'waitlisted') result = 'Waitlisted';
-        else if (regStatusRaw === 'rejected' || regStatusRaw === 'PAYMENT_REJECTED') result = 'Rejected';
+        else if (['rejected', 'payment_rejected'].includes(regStatusRaw.toLowerCase())) {
+          const isFreeTournament = Boolean(t.is_free) || (parseInt(t.entry_fee_amount) || 0) <= 0;
+          result = isFreeTournament ? 'Registration Rejected' : 'Payment Rejected';
+        }
         else if (regStatusRaw === 'pending_payment' || regStatusRaw === 'PENDING_PAYMENT_VERIFICATION') result = 'Payment Pending';
         return {
           id: t.id,
@@ -1731,6 +1734,8 @@ function Profile({ onNavigate, selectedUserProfile }) {
           dateFormatted: t.startDate ? formatDate(t.startDate) : 'TBD',
           prize: t.prize || 'TBA',
           entry: t.entry || 'Free',
+          is_free: Boolean(t.is_free),
+          entry_fee_amount: t.entry_fee_amount,
           orgName: t.orgName || '',
           poster: t.cover_image_url || t.bannerUrl || t.banner || null,
           logoUrl: t.logoUrl || null,

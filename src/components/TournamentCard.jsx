@@ -475,7 +475,10 @@ function TournamentCardBase({
   const filled = parseInt(slotsFilled) || 0
   const isSlotsFull = total > 0 && filled >= total
   const regRow = regStatus ? { status: regStatus } : null
-  const registrationBtnState = getRegistrationButtonState(regRow, lifecycleStatus, { slotsFull: isSlotsFull })
+  const registrationBtnState = getRegistrationButtonState(regRow, lifecycleStatus, {
+    slotsFull: isSlotsFull,
+    isPaid: !(Boolean(is_free || isFree) || (parseInt(entryFeeAmount) || 0) <= 0),
+  })
   const buttonConfig = registrationBtnState
 
   const displayBadgeText = badgeText || badgeConfig.text

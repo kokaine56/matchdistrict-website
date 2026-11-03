@@ -1733,7 +1733,7 @@ function RegistrationManager({
   const entryFee = parseInt(tournament.entry_fee_amount) || 0;
   const confirmedCount = registrations.filter(r => r.status === 'confirmed' || r.status === 'approved' || r.status === 'VERIFIED_BY_HOST').length;
   const pendingCount = registrations.filter(r => r.status === 'pending' || r.status === 'pending_payment' || r.status === 'PENDING_PAYMENT_VERIFICATION').length;
-  const rejectedCount = registrations.filter(r => r.status === 'rejected' || r.status === 'PAYMENT_REJECTED').length;
+  const rejectedCount = registrations.filter(r => ['rejected', 'payment_rejected'].includes((r.status || '').toLowerCase())).length;
   const slotsTotal = parseInt(tournament.slotsTotal || tournament.max_slots || tournament.slots) || 128;
   const progressPct = slotsTotal > 0 ? Math.round((confirmedCount / slotsTotal) * 100) : 0;
   const isOverflow = registrations.length > slotsTotal;
@@ -1982,7 +1982,9 @@ function RegistrationManager({
 
                       <td className="p-3 align-top">
                         <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${getStatusBadgeClass(reg.status)}`}>
-                          {reg.status === 'pending_payment' ? 'Pending Payment' : reg.status}
+                          {['rejected', 'payment_rejected'].includes((reg.status || '').toLowerCase())
+                            ? ((Boolean(reg.is_free) || (parseInt(reg.entry_fee_amount) || 0) <= 0) ? 'Registration Rejected' : 'Payment Rejected')
+                            : reg.status === 'pending_payment' ? 'Pending Payment' : reg.status}
                         </span>
                       </td>
                       <td className="p-3 text-right align-top">

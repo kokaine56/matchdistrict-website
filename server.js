@@ -7333,8 +7333,9 @@ const server = http.createServer(async (req, res) => {
             return;
           }
           const updated = await pool.query(
-            `UPDATE tournament_registrations tr SET discord_verified = TRUE
-           WHERE tr.id = $1 AND tr.tournament_id = $2 AND (
+            `UPDATE tournament_registrations tr SET discord_verified = TRUE, discord_verification_status = 'verified'
+           WHERE tr.id = $1 AND tr.tournament_id = $2
+             AND LOWER(COALESCE(tr.status, '')) IN ('approved', 'confirmed', 'verified_by_host') AND (
              EXISTS (
                SELECT 1 FROM users u LEFT JOIN user_discord_connections udc ON udc.user_id = u.id
                WHERE u.id = tr.user_id AND (u.discord_id = $3 OR u.discord_user_id = $3 OR udc.discord_id = $3)
@@ -7469,6 +7470,16 @@ const server = http.createServer(async (req, res) => {
               success: false,
               reason: 'different_tournament',
               message: 'This code belongs to a different tournament.'
+            }));
+            return;
+          }
+
+          if (['rejected', 'payment_rejected'].includes(String(reg.status || '').toLowerCase()) || reg.discord_verification_status === 'invalid') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              success: false,
+              reason: 'registration_rejected',
+              message: 'This verification code is no longer valid because the registration was rejected.'
             }));
             return;
           }
@@ -7632,6 +7643,18 @@ const server = http.createServer(async (req, res) => {
           }
 
           const reg = lockRes.rows[0];
+          if (['rejected', 'payment_rejected'].includes(String(reg.status || '').toLowerCase()) || reg.discord_verification_status === 'invalid') {
+            await client.query('ROLLBACK');
+            res.writeHead(409, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'REGISTRATION_REJECTED', message: 'This verification code is no longer valid because the registration was rejected.' }));
+            return;
+          }
+          if (!['approved', 'confirmed', 'verified_by_host'].includes(String(reg.status || '').toLowerCase())) {
+            await client.query('ROLLBACK');
+            res.writeHead(409, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'REGISTRATION_NOT_APPROVED', message: 'This registration is not approved, so its verification code cannot be used.' }));
+            return;
+          }
           if (reg.discord_code_used || reg.discord_verification_status === 'verified') {
             await client.query('ROLLBACK');
             res.writeHead(409, { 'Content-Type': 'application/json' });
@@ -9946,12 +9969,18 @@ const server = http.createServer(async (req, res) => {
           isAllowed = true;
         } else {
           const regRes = await pool.query(
-            'SELECT * FROM tournament_registrations WHERE tournament_id = $1 AND user_id = $2 AND status = $3',
-            [id, authUser.id, 'approved']
+            'SELECT * FROM tournament_registrations WHERE tournament_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 1',
+            [id, authUser.id]
           );
-          if (regRes.rows.length > 0 && regRes.rows[0].discord_verified) {
+          const registration = regRes.rows[0];
+          if (['rejected', 'payment_rejected'].includes(String(registration?.status || '').toLowerCase())) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'REGISTRATION_REJECTED', message: 'This registration was rejected. Its Discord verification code is no longer valid.' }));
+            return;
+          }
+          if (['approved', 'confirmed', 'verified_by_host'].includes(String(registration?.status || '').toLowerCase()) && registration.discord_verified) {
             isAllowed = true;
-          } else if (regRes.rows.length > 0) {
+          } else if (registration) {
             res.writeHead(403, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: false, error: 'DISCORD_VERIFICATION_REQUIRED', message: 'Complete verification in this tournament’s #verification channel before accessing room ID and password.' }));
             return;
@@ -12400,12 +12429,13 @@ const server = http.createServer(async (req, res) => {
         }
         const tId = decodeURIComponent(myRegMatch[1]);
         const regRes = await pool.query(
-          `SELECT tr.*,
+          `SELECT tr.*, t.is_free, t.entry_fee_amount AS tournament_entry_fee_amount,
                 ps.id          AS payment_submission_id,
                 ps.payment_status,
                 ps.proof_url,
                 ps.utr_number  AS payment_utr
          FROM   tournament_registrations tr
+         JOIN   tournaments t ON t.id = tr.tournament_id
          LEFT JOIN payment_submissions ps ON ps.id = tr.payment_id
          WHERE  tr.tournament_id = $1
            AND  tr.user_id       = $2
@@ -12414,6 +12444,9 @@ const server = http.createServer(async (req, res) => {
           [tId, authUser.id]
         );
         const registration = regRes.rows.length > 0 ? regRes.rows[0] : null;
+        if (registration && (['rejected', 'payment_rejected'].includes(String(registration.status || '').toLowerCase()) || registration.discord_verification_status === 'invalid')) {
+          registration.discord_verification_code = null;
+        }
         const discordLinked = await userHasLinkedDiscordAccount(authUser.id);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ success: true, registration, discord_linked: discordLinked }));
@@ -14166,9 +14199,14 @@ const server = http.createServer(async (req, res) => {
           matchedTeam = teamCheck.rows[0];
 
           const verificationRes = matchedTeam.registration_id
-            ? await pool.query('SELECT discord_verified FROM tournament_registrations WHERE id = $1 AND tournament_id = $2', [matchedTeam.registration_id, tId])
-            : await pool.query('SELECT discord_verified FROM tournament_registrations WHERE tournament_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 1', [tId, matchedTeam.leader_user_id]);
-          if (!verificationRes.rows[0]?.discord_verified) {
+            ? await pool.query('SELECT discord_verified, status FROM tournament_registrations WHERE id = $1 AND tournament_id = $2', [matchedTeam.registration_id, tId])
+            : await pool.query('SELECT discord_verified, status FROM tournament_registrations WHERE tournament_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 1', [tId, matchedTeam.leader_user_id]);
+          const verificationRegistration = verificationRes.rows[0];
+          if (['rejected', 'payment_rejected'].includes(String(verificationRegistration?.status || '').toLowerCase())) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: false, error: 'REGISTRATION_REJECTED', message: 'This registration was rejected. Its Discord verification code is no longer valid.' }));
+          }
+          if (!['approved', 'confirmed', 'verified_by_host'].includes(String(verificationRegistration?.status || '').toLowerCase()) || !verificationRegistration.discord_verified) {
             res.writeHead(403, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({ success: false, error: 'DISCORD_VERIFICATION_REQUIRED', message: 'Complete verification in this tournament’s #verification channel before accessing room ID and password.' }));
           }
@@ -15397,7 +15435,7 @@ const server = http.createServer(async (req, res) => {
           res.end(JSON.stringify({ success: false, error: 'UNAUTHORIZED', message: 'Authentication required.' }));
           return;
         }
-        const tournRes = await pool.query('SELECT "orgId", match_type FROM tournaments WHERE id = $1', [id]);
+        const tournRes = await pool.query('SELECT "orgId", match_type, is_free, entry_fee_amount FROM tournaments WHERE id = $1', [id]);
         if (tournRes.rows.length === 0) {
           res.writeHead(404, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ success: false, error: 'NOT_FOUND', message: 'Tournament not found.' }));
@@ -15468,6 +15506,8 @@ const server = http.createServer(async (req, res) => {
 
           return {
             ...safeReg,
+            is_free: Boolean(tournament.is_free),
+            tournament_entry_fee_amount: tournament.entry_fee_amount,
             team_name: reg.team_name || team?.team_name || null,
             payment_submitted_at_ist: formatPaymentSubmittedAtIST(reg.payment_submitted_at || reg.created_at),
             stage: stageInfo.stage,
@@ -15972,7 +16012,7 @@ const server = http.createServer(async (req, res) => {
           res.end(JSON.stringify({ success: false, error: 'FORBIDDEN', message: 'You can only view your own registrations.' }));
           return;
         }
-        const dbRes = await pool.query(`SELECT * FROM tournament_registrations r WHERE user_id = $1 AND (LOWER(COALESCE(status, '')) IN ('approved', 'confirmed', 'verified_by_host') OR screenshot_url IS NOT NULL OR transaction_id IS NOT NULL OR EXISTS (SELECT 1 FROM payment_submissions p WHERE p.registration_id = r.id AND p.proof_url IS NOT NULL)) ORDER BY created_at DESC`, [userId]);
+        const dbRes = await pool.query(`SELECT * FROM tournament_registrations r WHERE user_id = $1 AND (LOWER(COALESCE(status, '')) IN ('approved', 'confirmed', 'verified_by_host', 'rejected', 'payment_rejected') OR screenshot_url IS NOT NULL OR transaction_id IS NOT NULL OR EXISTS (SELECT 1 FROM payment_submissions p WHERE p.registration_id = r.id AND p.proof_url IS NOT NULL)) ORDER BY created_at DESC`, [userId]);
 
         const tournIds = Array.from(new Set(dbRes.rows.map((r) => r.tournament_id).filter(Boolean)));
         let tournamentsMap = new Map();
@@ -15980,7 +16020,7 @@ const server = http.createServer(async (req, res) => {
         let teamByLeaderId = new Map();
 
         if (tournIds.length > 0) {
-          const tRes = await pool.query('SELECT id, match_type, discord_invite_url, social_links FROM tournaments WHERE id = ANY($1)', [tournIds]);
+          const tRes = await pool.query('SELECT id, match_type, discord_invite_url, social_links, is_free, entry_fee_amount FROM tournaments WHERE id = ANY($1)', [tournIds]);
           for (const t of tRes.rows) {
             tournamentsMap.set(t.id, t);
           }
@@ -16029,7 +16069,10 @@ const server = http.createServer(async (req, res) => {
           const discInvite = tournament?.discord_invite_url || tournament?.social_links?.discord || null;
           return {
             ...reg,
+            discord_verification_code: ['rejected', 'payment_rejected'].includes(String(reg.status || '').toLowerCase()) || reg.discord_verification_status === 'invalid' ? null : reg.discord_verification_code,
             discord_invite_url: discInvite,
+            is_free: Boolean(tournament?.is_free),
+            tournament_entry_fee_amount: tournament?.entry_fee_amount ?? null,
             stage: stageInfo.stage,
             stage_label: stageInfo.label,
             stage_message: stageInfo.message,
@@ -18813,7 +18856,7 @@ const server = http.createServer(async (req, res) => {
 
         const dbRes = await pool.query(`
         SELECT r.*, t.title AS tournament_title, t.game AS tournament_game,
-               t.entry_fee_amount, ps.payment_status AS pay_status, ps.id AS payment_submission_id,
+               t.entry_fee_amount, t.is_free, ps.payment_status AS pay_status, ps.id AS payment_submission_id,
                ps.proof_url AS payment_proof_url, ps.utr_number AS payment_utr
         FROM tournament_registrations r
         LEFT JOIN tournaments t ON r.tournament_id = t.id

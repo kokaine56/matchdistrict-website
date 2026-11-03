@@ -612,6 +612,7 @@ function TournamentDetail({ onNavigate, tournamentId }) {
 
   const allTeams = useMemo(() => {
     return registrations.map(r => {
+      const registrationStatus = (r.status || '').toLowerCase();
       let parsedMembers = [];
       try { parsedMembers = typeof r.members === 'string' ? JSON.parse(r.members) : (r.members || []); } catch (e) { parsedMembers = []; }
       return {
@@ -621,11 +622,11 @@ function TournamentDetail({ onNavigate, tournamentId }) {
         rank: r.status === 'approved' || r.status === 'confirmed' ? 'Active Squad' : r.status === 'waitlisted' ? 'Waitlisted' : 'Pending Verification',
         captain: (r.captain && typeof r.captain === 'string') ? (r.captain.startsWith('@') ? r.captain : `@${r.captain}`) : '@Anonymous',
         verified: r.status === 'approved' || r.status === 'confirmed',
-        status: r.status === 'approved' ? 'Approved' : r.status === 'confirmed' ? 'Confirmed' : r.status === 'rejected' ? 'Rejected' : r.status === 'waitlisted' ? 'Waitlisted' : r.status === 'pending_payment' ? 'Pending Payment' : r.status === 'cancelled' ? 'Cancelled' : r.status === 'expired' ? 'Expired' : 'Pending Approval',
+        status: registrationStatus === 'approved' ? 'Approved' : registrationStatus === 'confirmed' ? 'Confirmed' : ['rejected', 'payment_rejected'].includes(registrationStatus) ? (Boolean(tourney?.is_free) || (parseInt(tourney?.entry_fee_amount) || 0) <= 0 ? 'Registration Rejected' : 'Payment Rejected') : registrationStatus === 'waitlisted' ? 'Waitlisted' : registrationStatus === 'pending_payment' ? 'Pending Payment' : registrationStatus === 'cancelled' ? 'Cancelled' : registrationStatus === 'expired' ? 'Expired' : 'Pending Approval',
         members: parsedMembers, user_id: r.user_id
       };
     });
-  }, [registrations]);
+  }, [registrations, tourney]);
 
   const filteredTeams = useMemo(() => {
     return allTeams.filter(team => {
@@ -1364,9 +1365,10 @@ function TournamentDetail({ onNavigate, tournamentId }) {
                   // Fall back to myRoster (organizer-tab enriched data) if the dedicated fetch hasn't run yet.
                   const regSource = myRegistration || myRoster || null;
                   const lifecycle = getTournamentLifecycleStatus(tourney, new Date());
-                  const btnState = getRegistrationButtonState(regSource, lifecycle, { slotsFull: isSlotsFull });
+                  const isPaidTournament = !Boolean(tourney?.is_free) && (parseInt(tourney?.entry_fee_amount) || 0) > 0;
+                  const btnState = getRegistrationButtonState(regSource, lifecycle, { slotsFull: isSlotsFull, isPaid: isPaidTournament });
 
-                  // Distinct rejected-payment UI separating status message from the action
+                  // Rejection wording follows this tournament's payment type.
                   if (btnState.isRejected) {
                     return (
                       <div className="w-full bg-error/10 border border-error/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 backdrop-blur-sm shadow-sm">
@@ -1375,9 +1377,9 @@ function TournamentDetail({ onNavigate, tournamentId }) {
                             <span className="material-symbols-outlined text-xl leading-none">error</span>
                           </div>
                           <div className="space-y-1 min-w-0">
-                            <h4 className="text-sm sm:text-base font-bold text-on-background tracking-tight">Payment Rejected</h4>
+                            <h4 className="text-sm sm:text-base font-bold text-on-background tracking-tight">{isPaidTournament ? 'Payment Rejected' : 'Registration Rejected'}</h4>
                             <p className="text-xs text-on-surface-variant leading-relaxed">
-                              Payment verification failed.{btnState.rejectionReason ? <span className="font-semibold text-error"> Reason: {btnState.rejectionReason}</span> : ''}
+                              {isPaidTournament ? 'Payment verification failed.' : 'Registration failed.'}{btnState.rejectionReason ? <span className="font-semibold text-error"> Reason: {btnState.rejectionReason}</span> : ''}
                             </p>
                           </div>
                         </div>

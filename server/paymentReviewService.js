@@ -784,9 +784,10 @@ export async function approve(pool, user, { registrationId, tournamentId, note =
       return { statusCode: 404, success: false, error: 'NOT_FOUND', message: 'Registration not found.' };
     }
     const reg = regRes.rows[0];
-    if (reg.is_free || parseInt(reg.entry_fee_amount || 0) === 0) {
+    const isFreeTournament = Boolean(reg.is_free) || parseInt(reg.entry_fee_amount || 0) === 0;
+    if (isFreeTournament && !reg.discord_verification_code && reg.discord_verification_status !== 'invalid') {
       await client.query('ROLLBACK');
-      return { statusCode: 400, success: false, error: 'FREE_TOURNAMENT', message: 'This tournament is free. Payment review is not applicable.' };
+      return { statusCode: 400, success: false, error: 'FREE_TOURNAMENT', message: 'This free registration cannot be re-approved because it has no Discord verification code.' };
     }
     const actualTournamentId = reg.tournament_id;
 
@@ -850,6 +851,11 @@ export async function approve(pool, user, { registrationId, tournamentId, note =
       [registrationId, actualTournamentId]
     );
     const updatedReg = updRegRes.rows[0];
+    const freshVerificationCode = await assignVerificationCode(client, registrationId, { forceNew: true });
+    updatedReg.discord_verification_code = freshVerificationCode;
+    updatedReg.discord_verification_status = 'pending';
+    updatedReg.discord_code_used = false;
+    updatedReg.discord_verified = false;
 
     // 6. Update payment_submissions
     if (payment) {
@@ -928,7 +934,8 @@ export async function reject(pool, user, { registrationId, tournamentId, reason 
     const tidClause = tournamentId ? 'AND r.tournament_id = $2' : '';
     const tidParams = tournamentId ? [registrationId, tournamentId] : [registrationId];
     const regRes = await client.query(
-      `SELECT r.*, t.title AS tournament_title, t."orgId" AS tournament_org_id, t.org_id AS tournament_org_id_alt
+      `SELECT r.*, t.title AS tournament_title, t."orgId" AS tournament_org_id, t.org_id AS tournament_org_id_alt,
+              t.is_free, t.entry_fee_amount
        FROM tournament_registrations r
        JOIN tournaments t ON t.id = r.tournament_id
        WHERE r.id = $1 ${tidClause}
@@ -941,6 +948,7 @@ export async function reject(pool, user, { registrationId, tournamentId, reason 
     }
     const reg = regRes.rows[0];
     const actualTournamentId = reg.tournament_id;
+    const isPaidTournament = !Boolean(reg.is_free) && parseInt(reg.entry_fee_amount || 0) > 0;
 
     // 2. Lock payment_submissions row
     const payRes = await client.query(
@@ -960,7 +968,7 @@ export async function reject(pool, user, { registrationId, tournamentId, reason 
     const currentStatus = (reg.status || '').toLowerCase();
     if (currentStatus === 'rejected' || currentStatus === 'payment_rejected') {
       await client.query('COMMIT');
-      return { success: true, idempotent: true, message: 'Registration is already rejected.', registration: reg };
+      return { success: true, idempotent: true, message: isPaidTournament ? 'Payment is already rejected.' : 'Registration is already rejected.', registration: reg };
     }
 
     const allowedStatuses = [
@@ -997,15 +1005,24 @@ export async function reject(pool, user, { registrationId, tournamentId, reason 
 
     // 5. Resolve reason text and code
     const reasonCode = reason || 'other';
-    const defaultText = REJECTION_REASONS[reasonCode] || 'Payment verification failed.';
+    const defaultText = isPaidTournament
+      ? (REJECTION_REASONS[reasonCode] || 'Payment verification failed.')
+      : 'Registration rejected.';
+    const reasonNote = isPaidTournament
+      ? String(note || '').trim()
+      : String(note || '').trim().replace(/\bpayment(?:\s+(?:proof|verification))?\b/gi, 'registration');
     const reasonText = (reasonCode === 'other' || note)
-      ? (note ? `${defaultText} Note: ${note.trim()}` : defaultText)
+      ? (reasonNote ? `${defaultText} Note: ${reasonNote}` : defaultText)
       : defaultText;
 
     // 6. Update registration status & release slot
     const updRegRes = await client.query(
       `UPDATE tournament_registrations
-       SET status = 'rejected', slot_number = NULL, rejection_reason = $1, rejected_at = NOW(), updated_at = NOW()
+       SET status = 'rejected', slot_number = NULL, rejection_reason = $1, rejected_at = NOW(),
+           discord_verification_status = 'invalid',
+           discord_code_used = false, discord_verified = false,
+           discord_captain_id = NULL, discord_member_ids = '[]'::jsonb, discord_verified_at = NULL,
+           updated_at = NOW()
        WHERE id = $2 AND tournament_id = $3
        RETURNING *`,
       [reasonText, registrationId, actualTournamentId]
@@ -1024,10 +1041,10 @@ export async function reject(pool, user, { registrationId, tournamentId, reason 
 
     await client.query('COMMIT');
     setImmediate(() => runRejectionSideEffects(pool, {
-      reg, registrationId, actualTournamentId, reviewerId, reasonCode, reasonText, note,
+      reg, registrationId, actualTournamentId, reviewerId, reasonCode, reasonText, note, isPaidTournament,
     }));
 
-    return { success: true, message: 'Registration rejected.', registration: updatedReg };
+    return { success: true, message: isPaidTournament ? 'Payment rejected.' : 'Registration rejected.', registration: updatedReg };
   } catch (err) {
     await client.query('ROLLBACK');
     console.error(`[paymentReviewService.reject] Error rejecting registration ${registrationId}:`, err);
@@ -1037,7 +1054,7 @@ export async function reject(pool, user, { registrationId, tournamentId, reason 
   }
 }
 
-async function runRejectionSideEffects(pool, { reg, registrationId, actualTournamentId, reviewerId, reasonCode, reasonText, note }) {
+async function runRejectionSideEffects(pool, { reg, registrationId, actualTournamentId, reviewerId, reasonCode, reasonText, note, isPaidTournament }) {
   const client = await pool.connect().catch((err) => {
     console.error('[paymentReviewService.reject] Background connection failed:', err);
     return null;
@@ -1049,7 +1066,7 @@ async function runRejectionSideEffects(pool, { reg, registrationId, actualTourna
     await client.query(
       `INSERT INTO admin_action_log (id, admin_id, action, action_type, target_type, target_id, target_user, details, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
-      [logId, reviewerId, 'payment_rejected', 'payment_rejected', 'registration', registrationId, reg.user_id || null,
+      [logId, reviewerId, isPaidTournament ? 'payment_rejected' : 'registration_rejected', isPaidTournament ? 'payment_rejected' : 'registration_rejected', 'registration', registrationId, reg.user_id || null,
         JSON.stringify({ reasonCode, reasonText, note: note || null, teamName: reg.team_name, tournamentTitle: reg.tournament_title })]
     );
     if (reg.user_id) {
@@ -1057,8 +1074,10 @@ async function runRejectionSideEffects(pool, { reg, registrationId, actualTourna
       await client.query(
         `INSERT INTO alerts (id, user_id, title, message, tournament_id, is_read, created_at)
          VALUES ($1, $2, $3, $4, $5, false, NOW())`,
-        [alertId, reg.user_id, 'Payment Proof Rejected ❌',
-          `Payment proof for "${reg.team_name}" was rejected. Reason: ${reasonText}. You may re-upload correct proof from the tournament page.`,
+        [alertId, reg.user_id, isPaidTournament ? 'Payment Proof Rejected ❌' : 'Registration Rejected ❌',
+          isPaidTournament
+            ? `Payment proof for "${reg.team_name}" was rejected. Reason: ${reasonText}. You may re-upload correct proof from the tournament page.`
+            : `Registration for "${reg.team_name}" was rejected. Reason: ${reasonText}. You may register again from the tournament page.`,
           actualTournamentId]
       );
     }

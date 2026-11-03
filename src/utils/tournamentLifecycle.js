@@ -249,7 +249,9 @@ export function getRegistrationButtonState(reg, lifecycle, options = {}) {
   // But if rejected, show distinct red state regardless of lifecycle
   if (['rejected', 'payment_rejected'].includes(rawStatus)) {
     const rawReason = reg && reg.rejection_reason ? reg.rejection_reason : ''
-    const cleanReason = rawReason.replace(/^Payment verification failed\.?\s*(Note:\s*)?/i, '').trim() || rawReason
+    const isPaid = options.isPaid !== false
+    const reasonForDisplay = !isPaid && /\bpayment\b/i.test(rawReason) ? 'Registration rejected.' : rawReason
+    const cleanReason = reasonForDisplay.replace(/^(?:Payment verification failed|Registration rejected)\.?\s*(Note:\s*)?/i, '').trim() || (rawReason ? reasonForDisplay : '')
     return {
       text: 'Register Again',
       icon: 'refresh',
