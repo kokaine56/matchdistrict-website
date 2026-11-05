@@ -623,7 +623,7 @@ function TournamentDetail({ onNavigate, tournamentId }) {
         rank: r.status === 'approved' || r.status === 'confirmed' ? 'Active Squad' : r.status === 'waitlisted' ? 'Waitlisted' : 'Pending Verification',
         captain: (r.captain && typeof r.captain === 'string') ? (r.captain.startsWith('@') ? r.captain : `@${r.captain}`) : '@Anonymous',
         verified: r.status === 'approved' || r.status === 'confirmed',
-        status: registrationStatus === 'approved' ? 'Approved' : registrationStatus === 'confirmed' ? 'Confirmed' : ['rejected', 'payment_rejected'].includes(registrationStatus) ? (Boolean(tourney?.is_free) || (parseInt(tourney?.entry_fee_amount) || 0) <= 0 ? 'Registration Rejected' : 'Payment Rejected') : registrationStatus === 'waitlisted' ? 'Waitlisted' : registrationStatus === 'pending_payment' ? 'Pending Payment' : registrationStatus === 'cancelled' ? 'Cancelled' : registrationStatus === 'expired' ? 'Expired' : 'Pending Approval',
+        status: registrationStatus === 'approved' ? 'Approved' : registrationStatus === 'confirmed' ? 'Confirmed' : ['rejected', 'payment_rejected'].includes(registrationStatus) ? (Boolean(tourney?.is_free) || (parseInt(tourney?.entry_fee_amount) || 0) <= 0 ? 'Registration Failed' : 'Payment Rejected') : registrationStatus === 'waitlisted' ? 'Waitlisted' : registrationStatus === 'pending_payment' ? 'Pending Payment' : registrationStatus === 'cancelled' ? 'Cancelled' : registrationStatus === 'expired' ? 'Expired' : 'Pending Approval',
         members: parsedMembers, user_id: r.user_id
       };
     });
@@ -923,7 +923,7 @@ function TournamentDetail({ onNavigate, tournamentId }) {
   };
 
   const entryFee = parseInt(tourney?.entry_fee_amount, 10) || 0;
-  const entryDisplay = isFreeTournament ? 'Free' : (entryFee === 0 ? 'Free' : formatIndianCurrency(entryFee));
+  const entryDisplay = (isFreeTournament || entryFee === 0 || tourney?.entry === 'Free' || tourney?.entry === '₹0' || tourney?.entry === '0') ? 'Free' : (entryFee > 0 ? formatIndianCurrency(entryFee) : (tourney?.entry || 'Free'));
   const basePrize = parseInt(tourney?.prize_pool_amount || tourney?.basePrize || tourney?.prizePool || 0, 10) || 0;
   const totalPrize = basePrize;
   const sponsoredAmount = 0;
@@ -1378,7 +1378,7 @@ function TournamentDetail({ onNavigate, tournamentId }) {
                             <span className="material-symbols-outlined text-xl leading-none">error</span>
                           </div>
                           <div className="space-y-1 min-w-0">
-                            <h4 className="text-sm sm:text-base font-bold text-on-background tracking-tight">{isPaidTournament ? 'Payment Rejected' : 'Registration Rejected'}</h4>
+                            <h4 className="text-sm sm:text-base font-bold text-on-background tracking-tight">{isPaidTournament ? 'Payment Rejected' : 'Registration Failed'}</h4>
                             <p className="text-xs text-on-surface-variant leading-relaxed">
                               {isPaidTournament ? 'Payment verification failed.' : 'Registration failed.'}{btnState.rejectionReason ? <span className="font-semibold text-error"> Reason: {btnState.rejectionReason}</span> : ''}
                             </p>

@@ -1721,7 +1721,7 @@ function Profile({ onNavigate, selectedUserProfile }) {
         else if (regStatusRaw === 'waitlisted') result = 'Waitlisted';
         else if (['rejected', 'payment_rejected'].includes(regStatusRaw.toLowerCase())) {
           const isFreeTournament = Boolean(t.is_free) || (parseInt(t.entry_fee_amount) || 0) <= 0;
-          result = isFreeTournament ? 'Registration Rejected' : 'Payment Rejected';
+          result = isFreeTournament ? 'Registration Failed' : 'Payment Rejected';
         }
         else if (regStatusRaw === 'pending_payment' || regStatusRaw === 'PENDING_PAYMENT_VERIFICATION') result = 'Payment Pending';
         return {

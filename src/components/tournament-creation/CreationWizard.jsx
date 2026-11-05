@@ -114,8 +114,8 @@ function validateStep(step, data, planLimits, orgName, userTier, userRole) {
       }
       if (data.entry_fee_amount !== '' && data.entry_fee_amount !== undefined) {
         const parsedFee = parseInt(data.entry_fee_amount)
-        if (isNaN(parsedFee) || parsedFee < 1) {
-          errs.entry_fee_amount = 'Entry fee must be greater than 0 for paid tournaments.'
+        if (isNaN(parsedFee) || parsedFee < 0) {
+          errs.entry_fee_amount = 'Entry fee must be 0 or greater.'
         }
       }
 
@@ -395,7 +395,7 @@ const isFreeTournament = Boolean(formData.is_free)
         teamsCount: '0',
         featured: false,
         prize: isFreeTournament ? '' : (prizePoolAmount > 0 ? `₹${prizePoolAmount.toLocaleString('en-IN')}` : 'TBD'),
-        entry: isFreeTournament ? 'Free' : (formData.entry_fee_amount ? `₹${parseInt(formData.entry_fee_amount)}` : 'Free'),
+        entry: isFreeTournament || !formData.entry_fee_amount || parseInt(formData.entry_fee_amount) === 0 ? 'Free' : `₹${parseInt(formData.entry_fee_amount)}`,
         registrationOpenDate: formData.registrationOpenDate || '',
         registrationCloseDate: formData.registrationCloseDate || '',
         startDate: formData.startDate || '',

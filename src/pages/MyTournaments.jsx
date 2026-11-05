@@ -168,7 +168,7 @@ export default function MyTournaments({ onNavigate }) {
 
       let badgeText = config.label
       let badgeBg = config.bg
-      if (regStatus === 'rejected' || regStatus === 'payment_rejected') badgeText = isFreeTournament ? 'Registration Rejected' : 'Payment Rejected'
+      if (regStatus === 'rejected' || regStatus === 'payment_rejected') badgeText = isFreeTournament ? 'Registration Failed' : 'Payment Rejected'
 
       if (isApproved) {
         if (reg.squad_waived) {
@@ -201,7 +201,7 @@ export default function MyTournaments({ onNavigate }) {
         status: t.status || 'upcoming',
         imgSrc: t.cover_image_url || t.bannerUrl || '',
         prizePool: t.prize || `₹${(parseInt(t.prize_pool_amount) || 0).toLocaleString('en-IN')}`,
-        entryFee: t.entry,
+        entryFee: (t.entry === '₹0' || t.entry === '0' || (parseInt(t.entry_fee_amount) || 0) === 0) ? 'Free' : (t.entry || 'Free'),
         entryFeeAmount: parseInt(t.entry_fee_amount) || 0,
         matchType: t.match_type || t.matchType || 'squad',
         perspective: t.perspective || 'tpp',
@@ -238,7 +238,7 @@ export default function MyTournaments({ onNavigate }) {
       status: t.status || 'upcoming',
       imgSrc: t.cover_image_url || t.bannerUrl || '',
       prizePool: t.prize || `₹${(parseInt(t.prize_pool_amount) || 0).toLocaleString('en-IN')}`,
-      entryFee: t.entry,
+      entryFee: (t.entry === '₹0' || t.entry === '0' || (parseInt(t.entry_fee_amount) || 0) === 0) ? 'Free' : (t.entry || 'Free'),
       entryFeeAmount: parseInt(t.entry_fee_amount) || 0,
       matchType: t.match_type || t.matchType || 'squad',
       perspective: t.perspective || 'tpp',

@@ -1146,7 +1146,7 @@ function RegistrationManager({
                 {registrations.map((reg) => {
                   const isPending = reg.status === 'pending' || reg.status === 'pending_payment'
                   const teamMembers = getTeamMembers(reg)
-                  const amountDisplay = reg.amount || (entryFee > 0 ? `₹${entryFee.toLocaleString('en-IN')}` : 'Free')
+                  const amountDisplay = (reg.amount && reg.amount !== '₹0' && reg.amount !== '0') ? reg.amount : (entryFee > 0 ? `₹${entryFee.toLocaleString('en-IN')}` : 'Free')
                   const proofUrl = reg.proofImg || reg.screenshot_url
                   return (
                     <tr key={reg.id} className="hover:bg-slate-50/50 transition-colors">
@@ -1236,7 +1236,7 @@ function RegistrationManager({
                       <td className="px-4 py-3 align-top">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${REG_STATUS_BADGE[reg.status] || 'bg-slate-500/15 text-slate-400 border-slate-500/25'}`}>
                           {['rejected', 'payment_rejected'].includes((reg.status || '').toLowerCase())
-                            ? ((Boolean(tournament.is_free) || (parseInt(tournament.entry_fee_amount) || 0) <= 0) ? 'Registration Rejected' : 'Payment Rejected')
+                            ? ((Boolean(tournament.is_free) || (parseInt(tournament.entry_fee_amount) || 0) <= 0) ? 'Registration Failed' : 'Payment Rejected')
                             : reg.status === 'pending_payment' || reg.status === 'PENDING_PAYMENT_VERIFICATION' ? 'Pending Payment' : reg.status === 'VERIFIED_BY_HOST' || reg.status === 'verified_by_host' ? 'Verified by Host' : reg.status ? reg.status.charAt(0).toUpperCase() + reg.status.slice(1) : '—'}
                         </span>
                       </td>

@@ -1983,7 +1983,7 @@ function RegistrationManager({
                       <td className="p-3 align-top">
                         <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${getStatusBadgeClass(reg.status)}`}>
                           {['rejected', 'payment_rejected'].includes((reg.status || '').toLowerCase())
-                            ? ((Boolean(reg.is_free) || (parseInt(reg.entry_fee_amount) || 0) <= 0) ? 'Registration Rejected' : 'Payment Rejected')
+                            ? ((Boolean(reg.is_free) || (parseInt(reg.entry_fee_amount) || 0) <= 0) ? 'Registration Failed' : 'Payment Rejected')
                             : reg.status === 'pending_payment' ? 'Pending Payment' : reg.status}
                         </span>
                       </td>

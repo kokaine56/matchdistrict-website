@@ -555,6 +555,27 @@ export async function runSchemaMigrations(clientOrPool) {
       ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS reserved_slots INTEGER DEFAULT 0;
       ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS entry_fee_amount INTEGER DEFAULT 0;
       ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS "entryFee" VARCHAR(100);
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conrelid = 'tournaments'::regclass
+            AND conname = 'tournaments_entry_fee_check'
+            AND pg_get_constraintdef(oid) LIKE '%entry_fee > 0%'
+        ) THEN
+          ALTER TABLE tournaments DROP CONSTRAINT tournaments_entry_fee_check;
+          ALTER TABLE tournaments ADD CONSTRAINT tournaments_entry_fee_check CHECK (entry_fee >= 0);
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conrelid = 'tournaments'::regclass
+            AND conname = 'tournaments_entry_fee_amount_check'
+            AND pg_get_constraintdef(oid) LIKE '%entry_fee_amount > 0%'
+        ) THEN
+          ALTER TABLE tournaments DROP CONSTRAINT tournaments_entry_fee_amount_check;
+          ALTER TABLE tournaments ADD CONSTRAINT tournaments_entry_fee_amount_check CHECK (entry_fee_amount >= 0);
+        END IF;
+      END $$;
       ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS prize_pool_type VARCHAR(20) DEFAULT 'fixed';
       ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS prize_pool_amount INTEGER DEFAULT 0;
       ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS prize_split_1st VARCHAR(50) DEFAULT '';

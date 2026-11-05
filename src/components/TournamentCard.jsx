@@ -46,7 +46,9 @@ const formatStatusHeaderText = (text) => {
 }
 
 const formatINR = (val) => {
+  if (val === 0 || val === '0' || val === 'Free' || String(val).toLowerCase() === 'free') return 'Free'
   const n = parseInt(String(val || '').replace(/[^0-9]/g, ''), 10)
+  if (n === 0) return 'Free'
   return isNaN(n) ? (val || 'TBA') : `₹${n.toLocaleString('en-IN')}`
 }
 
@@ -162,7 +164,8 @@ function WalletPassCard({
     (entryFeeAmount === 0 && (!prizePool || prizePool === '0' || prizePool === 'TBD' || prizePool === 'No Prize Pool' || prizePool === 'Free')) ||
     (entryFee === 'Free' && (!prizePool || prizePool === 'No Prize Pool' || prizePool === '0'))
   )
-  const entryDisplay = isFreeTournament ? 'Free' : (entryFeeAmount > 0 ? `₹${parseInt(entryFeeAmount).toLocaleString('en-IN')}` : (entryFee || 'Free'))
+  const isZeroFee = entryFeeAmount === 0 || parseInt(entryFeeAmount) === 0 || entryFee === '0' || entryFee === '₹0' || entryFee === 'Free'
+  const entryDisplay = (isFreeTournament || isZeroFee) ? 'Free' : (entryFeeAmount > 0 ? `₹${parseInt(entryFeeAmount).toLocaleString('en-IN')}` : (entryFee || 'Free'))
   const prizeDisplay = prizePool ? formatCompactPrize(prizePool) : 'TBA'
 
   return (
@@ -496,7 +499,8 @@ function TournamentCardBase({
     (entryFeeAmount === 0 && (!prizePool || prizePool === '0' || prizePool === 'TBD' || prizePool === 'No Prize Pool' || prizePool === 'Free')) ||
     (entryFee === 'Free' && (!prizePool || prizePool === 'No Prize Pool' || prizePool === '0'))
   )
-  const entryDisplay = isFreeTournament ? 'Free' : (entryFeeAmount > 0 ? `₹${parseInt(entryFeeAmount).toLocaleString('en-IN')}` : (entryFee || 'Free'))
+  const isZeroFee = entryFeeAmount === 0 || parseInt(entryFeeAmount) === 0 || entryFee === '0' || entryFee === '₹0' || entryFee === 'Free'
+  const entryDisplay = (isFreeTournament || isZeroFee) ? 'Free' : (entryFeeAmount > 0 ? `₹${parseInt(entryFeeAmount).toLocaleString('en-IN')}` : (entryFee || 'Free'))
 
   const isLive = lifecycleStatus === 'live'
 

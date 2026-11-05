@@ -1845,7 +1845,15 @@ function withTournamentDisplay(r) {
       if (r.prize && r.prize !== 'TBD' && r.prize !== 'TBA') return r.prize;
       return 'TBD';
     })(),
-    entry: r.is_free ? 'Free' : (r.entry_fee_amount ? `₹${parseInt(r.entry_fee_amount)}` : (r.entry || 'Free')),
+    entry: (() => {
+      if (r.is_free) return 'Free';
+      const fee = parseInt(r.entry_fee_amount);
+      if (!isNaN(fee)) {
+        return fee > 0 ? `₹${fee}` : 'Free';
+      }
+      if (r.entry === '₹0' || r.entry === '0') return 'Free';
+      return r.entry || 'Free';
+    })(),
   };
   delete sanitized.roomID;
   delete sanitized.roomPassword;
@@ -8819,8 +8827,8 @@ const server = http.createServer(async (req, res) => {
           const isFree = Boolean(t.is_free);
           const orgEntryFee = isFree ? 0 : (t.entry_fee_amount !== undefined ? parseInt(t.entry_fee_amount) : 0);
           const orgPrizeAmount = isFree ? 0 : (t.prize_pool_amount !== undefined ? parseInt(t.prize_pool_amount) : 0);
-          const orgPrize = isFree ? '' : (t.prize || '');
-          const orgEntry = isFree ? 'Free' : (t.entry || 'Free');
+          const orgPrize = isFree ? '' : (orgPrizeAmount > 0 ? `₹${orgPrizeAmount.toLocaleString('en-IN')}` : (t.prize || ''));
+          const orgEntry = (isFree || orgEntryFee === 0 || t.entry === '₹0' || t.entry === '0') ? 'Free' : (t.entry || (orgEntryFee > 0 ? `₹${orgEntryFee}` : 'Free'));
 
           const dbRes = await pool.query(
             `INSERT INTO tournaments (
@@ -9409,7 +9417,7 @@ const server = http.createServer(async (req, res) => {
             // Admin is always allowed — force live + featured + Match District branding
             const slotsTotal = t.slotsTotal !== undefined ? parseInt(t.slotsTotal) : existing.slotsTotal;
             const prizePoolAmount = parseInt(t.prize_pool_amount) || existing.prize_pool_amount || 0;
-            const entryFeeAmount = parseInt(t.entry_fee_amount) || existing.entry_fee_amount || 0;
+            const entryFeeAmount = (t.entry_fee_amount !== undefined && !isNaN(parseInt(t.entry_fee_amount))) ? parseInt(t.entry_fee_amount) : (existing.entry_fee_amount || 0);
             const prizeDisplay = prizePoolAmount > 0 ? `₹${prizePoolAmount.toLocaleString('en-IN')}` : existing.prize;
             const entryDisplay = entryFeeAmount > 0 ? `₹${entryFeeAmount}` : 'Free';
 
@@ -9804,7 +9812,9 @@ const server = http.createServer(async (req, res) => {
                 t.badgeText !== undefined ? t.badgeText : null,
                 t.date !== undefined ? t.date : null,
                 t.prize !== undefined ? t.prize : null,
-                t.entry !== undefined ? t.entry : null,
+                t.entry !== undefined
+                  ? ((t.entry === '₹0' || t.entry === '0' || (t.entry_fee_amount !== undefined && parseInt(t.entry_fee_amount) === 0)) ? 'Free' : t.entry)
+                  : (t.entry_fee_amount !== undefined && parseInt(t.entry_fee_amount) === 0 ? 'Free' : null),
                 t.teamsCount !== undefined ? t.teamsCount : null,
                 null, // `featured` is never client-settable; promotion is admin-managed via tournament_promotions
                 t.orgName !== undefined ? t.orgName : null,

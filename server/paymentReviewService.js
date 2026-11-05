@@ -968,7 +968,7 @@ export async function reject(pool, user, { registrationId, tournamentId, reason 
     const currentStatus = (reg.status || '').toLowerCase();
     if (currentStatus === 'rejected' || currentStatus === 'payment_rejected') {
       await client.query('COMMIT');
-      return { success: true, idempotent: true, message: isPaidTournament ? 'Payment is already rejected.' : 'Registration is already rejected.', registration: reg };
+      return { success: true, idempotent: true, message: isPaidTournament ? 'Payment is already rejected.' : 'Registration failed.', registration: reg };
     }
 
     const allowedStatuses = [
@@ -1007,7 +1007,7 @@ export async function reject(pool, user, { registrationId, tournamentId, reason 
     const reasonCode = reason || 'other';
     const defaultText = isPaidTournament
       ? (REJECTION_REASONS[reasonCode] || 'Payment verification failed.')
-      : 'Registration rejected.';
+      : 'Registration failed.';
     const reasonNote = isPaidTournament
       ? String(note || '').trim()
       : String(note || '').trim().replace(/\bpayment(?:\s+(?:proof|verification))?\b/gi, 'registration');
@@ -1044,7 +1044,7 @@ export async function reject(pool, user, { registrationId, tournamentId, reason 
       reg, registrationId, actualTournamentId, reviewerId, reasonCode, reasonText, note, isPaidTournament,
     }));
 
-    return { success: true, message: isPaidTournament ? 'Payment rejected.' : 'Registration rejected.', registration: updatedReg };
+    return { success: true, message: isPaidTournament ? 'Payment rejected.' : 'Registration failed.', registration: updatedReg };
   } catch (err) {
     await client.query('ROLLBACK');
     console.error(`[paymentReviewService.reject] Error rejecting registration ${registrationId}:`, err);
@@ -1074,10 +1074,10 @@ async function runRejectionSideEffects(pool, { reg, registrationId, actualTourna
       await client.query(
         `INSERT INTO alerts (id, user_id, title, message, tournament_id, is_read, created_at)
          VALUES ($1, $2, $3, $4, $5, false, NOW())`,
-        [alertId, reg.user_id, isPaidTournament ? 'Payment Proof Rejected ❌' : 'Registration Rejected ❌',
+        [alertId, reg.user_id, isPaidTournament ? 'Payment Proof Rejected ❌' : 'Registration Failed ❌',
           isPaidTournament
             ? `Payment proof for "${reg.team_name}" was rejected. Reason: ${reasonText}. You may re-upload correct proof from the tournament page.`
-            : `Registration for "${reg.team_name}" was rejected. Reason: ${reasonText}. You may register again from the tournament page.`,
+            : `Registration for "${reg.team_name}" failed. Reason: ${reasonText}. You may register again from the tournament page.`,
           actualTournamentId]
       );
     }

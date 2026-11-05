@@ -28,7 +28,9 @@ const MONTH_NAMES = [
 ]
 
 const formatINR = (val) => {
+  if (val === 0 || val === '0' || val === 'Free' || String(val).toLowerCase() === 'free') return 'Free'
   const n = parseInt(String(val || '').replace(/[^0-9]/g, ''), 10)
+  if (n === 0) return 'Free'
   return isNaN(n) ? (val || 'TBA') : `\u20B9${n.toLocaleString('en-IN')}`
 }
 

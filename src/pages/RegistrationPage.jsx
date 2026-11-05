@@ -438,8 +438,8 @@ function RegistrationPage({ onNavigate }) {
   const [submittedTimeIST, setSubmittedTimeIST] = useState('')
   const [rejectedReg, setRejectedReg] = useState(null)
   const isPaid = !tourney?.is_free && parseInt(tourney?.entry_fee_amount || 0) > 0
-  const rejectedReasonText = rejectedReg?.rejection_reason || (isPaid ? 'Payment verification failed.' : 'Registration rejected.')
-  const visibleRejectedReason = !isPaid && /\bpayment\b/i.test(rejectedReasonText) ? 'Registration rejected.' : rejectedReasonText
+  const rejectedReasonText = rejectedReg?.rejection_reason || (isPaid ? 'Payment verification failed.' : 'Registration failed.')
+  const visibleRejectedReason = !isPaid && /\bpayment\b/i.test(rejectedReasonText) ? 'Registration failed.' : rejectedReasonText
   const entryFee = parseInt(tourney?.entry_fee_amount || 0)
 
   useEffect(() => {
@@ -1308,7 +1308,7 @@ function RegistrationPage({ onNavigate }) {
                 </span>
               </div>
               <p className="text-sm font-bold truncate">{form.teamName}</p>
-              <p className="text-xs text-white/40">Entry Fee: <span className="text-green-400 font-bold">₹{entryFee.toLocaleString('en-IN')}</span></p>
+              <p className="text-xs text-white/40">Entry Fee: <span className="text-green-400 font-bold">{entryFee === 0 ? 'Free' : `₹${entryFee.toLocaleString('en-IN')}`}</span></p>
             </div>
           </div>
 
@@ -1344,7 +1344,7 @@ function RegistrationPage({ onNavigate }) {
                 <div className="space-y-1">
                   <p className="text-[11px] text-white/40 uppercase tracking-wider">Amount to Pay</p>
                   <div className="inline-flex items-center gap-2">
-                    <p className="text-3xl font-black text-green-400">₹{entryFee.toLocaleString('en-IN')}</p>
+                    <p className="text-3xl font-black text-green-400">{entryFee === 0 ? 'Free' : `₹${entryFee.toLocaleString('en-IN')}`}</p>
                     <button
                       type="button"
                       onClick={() => {

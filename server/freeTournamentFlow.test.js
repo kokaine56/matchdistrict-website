@@ -15,7 +15,15 @@ test('Free Tournament Flow - Display normalization', () => {
         if (r.prize && r.prize !== 'TBD' && r.prize !== 'TBA') return r.prize;
         return 'TBD';
       })(),
-      entry: r.is_free ? 'Free' : (r.entry_fee_amount ? `₹${parseInt(r.entry_fee_amount)}` : (r.entry || 'Free')),
+      entry: (() => {
+        if (r.is_free) return 'Free';
+        const fee = parseInt(r.entry_fee_amount);
+        if (!isNaN(fee)) {
+          return fee > 0 ? `₹${fee}` : 'Free';
+        }
+        if (r.entry === '₹0' || r.entry === '0') return 'Free';
+        return r.entry || 'Free';
+      })(),
     };
   }
 
@@ -44,6 +52,20 @@ test('Free Tournament Flow - Display normalization', () => {
   assert.equal(paidTourney.is_free, false);
   assert.equal(paidTourney.prize, '₹5,000');
   assert.equal(paidTourney.entry, '₹50');
+
+  // Zero-fee tournament with prize pool (is_free = false)
+  const zeroFeeWithPrizeTourney = testWithTournamentDisplay({
+    id: 'TRN-ZERO-FEE-PRIZE-1',
+    is_free: false,
+    prize_pool_amount: 10000,
+    entry_fee_amount: 0,
+    prize: '',
+    entry: '₹0',
+  });
+
+  assert.equal(zeroFeeWithPrizeTourney.is_free, false);
+  assert.equal(zeroFeeWithPrizeTourney.prize, '₹10,000', 'Tournament with prize pool must display formatted prize');
+  assert.equal(zeroFeeWithPrizeTourney.entry, 'Free', 'Tournament with 0 entry fee must display Free, not ₹0');
 });
 
 test('Free Tournament Flow - Registration status determination', () => {
@@ -58,6 +80,11 @@ test('Free Tournament Flow - Registration status determination', () => {
   const freeResult = determineRegStatus({ is_free: true, entry_fee_amount: 0 });
   assert.equal(freeResult.isPaid, false);
   assert.equal(freeResult.status, 'approved', 'Free tournaments must immediately be approved, bypassing payment');
+
+  // Zero-fee tournament with prize pool (is_free: false, entry_fee_amount: 0)
+  const zeroFeePrizeResult = determineRegStatus({ is_free: false, entry_fee_amount: 0 });
+  assert.equal(zeroFeePrizeResult.isPaid, false);
+  assert.equal(zeroFeePrizeResult.status, 'approved', 'Zero-fee tournament with prize pool must immediately be approved, bypassing payment');
 
   // Free tournament with residual fee from switching (server overrides)
   const freeResidual = determineRegStatus({ is_free: true, entry_fee_amount: 100 });
@@ -82,7 +109,31 @@ test('Free Tournament Flow - Payment endpoints rejection', () => {
   assert.equal(freeCheck.allowed, false);
   assert.equal(freeCheck.error, 'FREE_TOURNAMENT');
 
+  const zeroFeePrizeCheck = checkPaymentVerificationAllowed({ is_free: false, entry_fee_amount: 0 });
+  assert.equal(zeroFeePrizeCheck.allowed, false);
+  assert.equal(zeroFeePrizeCheck.error, 'FREE_TOURNAMENT');
+
   const paidCheck = checkPaymentVerificationAllowed({ is_free: false, entry_fee_amount: 100 });
   assert.equal(paidCheck.allowed, true);
+});
+
+test('Zero-fee tournament - Rejection message wording', () => {
+  function getRejectionMessage(reg) {
+    const isPaidTournament = !Boolean(reg.is_free) && parseInt(reg.entry_fee_amount || 0) > 0;
+    return isPaidTournament ? 'Payment rejected.' : 'Registration failed.';
+  }
+
+  // Zero-fee tournament with prize pool
+  const zeroFeeMsg = getRejectionMessage({ is_free: false, entry_fee_amount: 0 });
+  assert.equal(zeroFeeMsg, 'Registration failed.');
+  assert.equal(zeroFeeMsg.includes('Payment rejected'), false);
+
+  // Pure free tournament
+  const freeMsg = getRejectionMessage({ is_free: true, entry_fee_amount: 0 });
+  assert.equal(freeMsg, 'Registration failed.');
+
+  // Paid tournament
+  const paidMsg = getRejectionMessage({ is_free: false, entry_fee_amount: 100 });
+  assert.equal(paidMsg, 'Payment rejected.');
 });
 
