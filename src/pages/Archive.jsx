@@ -145,11 +145,10 @@ function Archive({ onNavigate }) {
                 <button
                   key={year}
                   onClick={() => setSelectedYear(year)}
-                  className={`px-5 py-2.5 rounded-xl font-headline-md text-sm font-bold whitespace-nowrap transition-all ${
-                    selectedYear === year
-                      ? 'bg-primary text-white shadow-[0_0_20px_rgba(99,102,241,0.3)]'
-                      : 'bg-surface-container-low/60 text-on-surface-variant border border-outline-variant/30 hover:border-primary/40 hover:text-white'
-                  }`}
+                  className={`px-5 py-2.5 rounded-xl font-headline-md text-sm font-bold whitespace-nowrap transition-all ${selectedYear === year
+                    ? 'bg-primary text-white shadow-[0_0_20px_rgba(99,102,241,0.3)]'
+                    : 'bg-surface-container-low/60 text-on-surface-variant border border-outline-variant/30 hover:border-primary/40 hover:text-white'
+                    }`}
                 >
                   {year}
                 </button>

@@ -251,7 +251,7 @@ export default function CreationWizard() {
         const u = JSON.parse(stored)
         if (u.tier) setUserTier(u.tier)
       }
-    } catch {}
+    } catch { }
 
     fetch('/api/org/tournament-usage')
       .then((r) => r.json())
@@ -263,7 +263,7 @@ export default function CreationWizard() {
           })
         }
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [])
 
   // Check edit mode
@@ -366,7 +366,7 @@ export default function CreationWizard() {
           setShowRecovery(true)
         }
       }
-    } catch {}
+    } catch { }
   }, [isEditMode])
 
   const recoverDraft = () => { setCurrentStep(recoveredStep); setShowRecovery(false) }
@@ -381,7 +381,7 @@ export default function CreationWizard() {
 
       const prizePoolAmount = Number(formData.prize_pool_amount) || 0
 
-const isFreeTournament = Boolean(formData.is_free)
+      const isFreeTournament = Boolean(formData.is_free)
       const body = {
         title: formData.title,
         game: formData.game,
@@ -420,7 +420,7 @@ const isFreeTournament = Boolean(formData.is_free)
         sponsors_enabled: isFreeTournament ? false : (formData.sponsors_enabled ?? false),
         rules: formData.rules || '',
         teams_per_group: formData.teams_per_group ? parseInt(formData.teams_per_group) : 16,
-      teams_per_match: formData.teams_per_group ? parseInt(formData.teams_per_group) : 16,
+        teams_per_match: formData.teams_per_group ? parseInt(formData.teams_per_group) : 16,
         max_slots_per_room: formData.max_slots_per_room ? parseInt(formData.max_slots_per_room) : null,
         unique_amount_suffix_enabled: formData.unique_amount_suffix_enabled || false,
         card_color: formData.card_color || 'white',
@@ -492,7 +492,7 @@ const isFreeTournament = Boolean(formData.is_free)
                 sponsors: formData.sponsors,
               }),
             })
-          } catch {}
+          } catch { }
         }
       }
       setIsSubmitting(false)
@@ -662,7 +662,7 @@ const isFreeTournament = Boolean(formData.is_free)
         try {
           const toSave = { ...newData, _savedStep: currentStep }
           localStorage.setItem(LS_KEY, JSON.stringify(toSave))
-        } catch {}
+        } catch { }
       }
     }, 60)
   }, [isEditMode, currentStep])

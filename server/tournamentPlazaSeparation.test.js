@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-test('Tournament Plaza - Separation of Paid and Free Tournaments', () => {
+test('Tournament Plaza - Unified Listing of Paid and Free Tournaments', () => {
   const mockTournaments = [
     {
       id: 'TRN-1',
@@ -29,7 +29,6 @@ test('Tournament Plaza - Separation of Paid and Free Tournaments', () => {
       id: 'TRN-3',
       title: 'Free Fire Weekend Clash',
       game: 'Free Fire',
-      // Edge case: is_free is true, but has residual entry_fee_amount
       is_free: true,
       entry_fee_amount: 50,
       prize_pool_amount: 500,
@@ -41,7 +40,6 @@ test('Tournament Plaza - Separation of Paid and Free Tournaments', () => {
       id: 'TRN-4',
       title: 'Invitational Masters',
       game: 'BGMI',
-      // Edge case: is_free is false, but entry_fee_amount is 0 (sponsor paid)
       is_free: false,
       entry_fee_amount: 0,
       prize_pool_amount: 50000,
@@ -51,8 +49,8 @@ test('Tournament Plaza - Separation of Paid and Free Tournaments', () => {
     }
   ];
 
-  // Filtering function mirroring Tournaments.jsx
-  function filterAndSeparate(tournamentsList, filters = {}) {
+  // Listing and filtering function mirroring unified Tournament Plaza
+  function getPlazaTournaments(tournamentsList, filters = {}) {
     const { searchQuery = '', gameFilter = 'All Games', entryTypeFilter = 'All' } = filters;
 
     const filtered = tournamentsList.filter(t => {
@@ -70,61 +68,52 @@ test('Tournament Plaza - Separation of Paid and Free Tournaments', () => {
       return matchSearch && matchGame && matchEntry;
     });
 
-    const paidTournaments = filtered.filter(t => !t.is_free);
-    const freeTournaments = filtered.filter(t => Boolean(t.is_free));
-
     return {
-      filtered,
-      paidTournaments,
-      freeTournaments,
-      paidEmptyMessage: paidTournaments.length === 0 ? "No paid tournaments available right now." : null,
-      freeEmptyMessage: freeTournaments.length === 0 ? "No free tournaments available right now." : null
+      tournaments: filtered,
+      count: filtered.length,
+      emptyMessage: filtered.length === 0 ? 'No tournaments available right now.' : null
     };
   }
 
-  // Test 1: Complete separation with no active filters
-  const resultAll = filterAndSeparate(mockTournaments);
-  assert.equal(resultAll.paidTournaments.length, 2);
-  assert.equal(resultAll.freeTournaments.length, 2);
+  // Test 1: All tournaments displayed together in one unified listing
+  const resultAll = getPlazaTournaments(mockTournaments);
+  assert.equal(resultAll.tournaments.length, 4);
+  assert.equal(resultAll.count, 4);
+  assert.equal(resultAll.emptyMessage, null);
 
-  // Check TRN-3 (is_free: true even with residual fee) is in Free Tournaments only
-  assert.ok(resultAll.freeTournaments.some(t => t.id === 'TRN-3'));
-  assert.ok(!resultAll.paidTournaments.some(t => t.id === 'TRN-3'), 'Free tournament with residual fee must never be in Paid');
+  // Both paid and free tournaments exist in the same unified listing
+  const hasPaid = resultAll.tournaments.some(t => !t.is_free);
+  const hasFree = resultAll.tournaments.some(t => Boolean(t.is_free));
+  assert.ok(hasPaid, 'Unified listing must include paid tournaments');
+  assert.ok(hasFree, 'Unified listing must include free tournaments');
 
-  // Check TRN-4 (is_free: false with 0 fee) is in Paid Tournaments only
-  assert.ok(resultAll.paidTournaments.some(t => t.id === 'TRN-4'), 'Paid tournament with 0 fee must be in Paid section based on is_free');
-  assert.ok(!resultAll.freeTournaments.some(t => t.id === 'TRN-4'));
+  // Verify tournament card properties are preserved
+  const trn1 = resultAll.tournaments.find(t => t.id === 'TRN-1');
+  assert.equal(trn1.is_free, false);
+  assert.equal(trn1.entry, '₹100');
+  assert.equal(trn1.prize, '₹10,000');
 
-  // Ensure no tournament is ever in both sections
-  const paidIds = new Set(resultAll.paidTournaments.map(t => t.id));
-  const freeIds = new Set(resultAll.freeTournaments.map(t => t.id));
-  for (const id of paidIds) {
-    assert.equal(freeIds.has(id), false, `Tournament ${id} must not appear in both sections`);
-  }
+  const trn2 = resultAll.tournaments.find(t => t.id === 'TRN-2');
+  assert.equal(trn2.is_free, true);
+  assert.equal(trn2.entry, 'Free');
 
-  // Test 2: Search filter applies across both sections
-  const resultSearch = filterAndSeparate(mockTournaments, { searchQuery: 'BGMI' });
-  assert.equal(resultSearch.paidTournaments.length, 2); // TRN-1, TRN-4
-  assert.equal(resultSearch.freeTournaments.length, 0);
-  assert.equal(resultSearch.freeEmptyMessage, "No free tournaments available right now.", 'Empty free section must display required message');
+  // Test 2: Search filter applies across all tournaments in the unified list
+  const resultSearch = getPlazaTournaments(mockTournaments, { searchQuery: 'BGMI' });
+  assert.equal(resultSearch.count, 2);
+  assert.deepEqual(resultSearch.tournaments.map(t => t.id), ['TRN-1', 'TRN-4']);
 
-  // Test 3: Filter by Free entry
-  const resultFreeFilter = filterAndSeparate(mockTournaments, { entryTypeFilter: 'Free' });
-  assert.equal(resultFreeFilter.freeTournaments.length, 2);
-  assert.equal(resultFreeFilter.paidTournaments.length, 0);
-  assert.equal(resultFreeFilter.paidEmptyMessage, "No paid tournaments available right now.", 'Empty paid section must display required message');
+  // Test 3: Optional Entry filter Free returns free tournaments in unified list
+  const resultFree = getPlazaTournaments(mockTournaments, { entryTypeFilter: 'Free' });
+  assert.equal(resultFree.count, 2);
+  assert.deepEqual(resultFree.tournaments.map(t => t.id), ['TRN-2', 'TRN-3']);
 
-  // Test 4: Filter by Paid entry
-  const resultPaidFilter = filterAndSeparate(mockTournaments, { entryTypeFilter: 'Paid' });
-  assert.equal(resultPaidFilter.paidTournaments.length, 2);
-  assert.equal(resultPaidFilter.freeTournaments.length, 0);
-  assert.equal(resultPaidFilter.freeEmptyMessage, "No free tournaments available right now.");
+  // Test 4: Optional Entry filter Paid returns paid tournaments in unified list
+  const resultPaid = getPlazaTournaments(mockTournaments, { entryTypeFilter: 'Paid' });
+  assert.equal(resultPaid.count, 2);
+  assert.deepEqual(resultPaid.tournaments.map(t => t.id), ['TRN-1', 'TRN-4']);
 
-  // Test 5: Empty state when no tournaments exist at all
-  const resultEmpty = filterAndSeparate([]);
-  assert.equal(resultEmpty.paidTournaments.length, 0);
-  assert.equal(resultEmpty.freeTournaments.length, 0);
-  assert.equal(resultEmpty.paidEmptyMessage, "No paid tournaments available right now.");
-  assert.equal(resultEmpty.freeEmptyMessage, "No free tournaments available right now.");
+  // Test 5: Single clean empty state when no tournaments exist
+  const resultEmpty = getPlazaTournaments([]);
+  assert.equal(resultEmpty.count, 0);
+  assert.equal(resultEmpty.emptyMessage, 'No tournaments available right now.');
 });
-
