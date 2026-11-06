@@ -644,6 +644,7 @@ function Profile({ onNavigate, selectedUserProfile }) {
   const [presetGameFilter, setPresetGameFilter] = useState('All')
   const [deleteConfirmId, setDeleteConfirmId] = useState(null)
   const [presetsLoading, setPresetsLoading] = useState(true)
+  const [presetsError, setPresetsError] = useState('')
 
   // Tournament status filters
   const [tournamentFilter, setTournamentFilter] = useState('all')
@@ -660,6 +661,36 @@ function Profile({ onNavigate, selectedUserProfile }) {
     setShowToast(true)
     setTimeout(() => setShowToast(false), 4000)
   }
+
+  const fetchTeamPresets = useCallback(async () => {
+    if (!currentUserFromContext) {
+      setPresets([])
+      setPresetsError('')
+      setPresetsLoading(false)
+      return
+    }
+    setPresetsLoading(true)
+    setPresetsError('')
+    try {
+      const token = await getAuthToken()
+      const headers = {}
+      if (token) headers.Authorization = `Bearer ${token}`
+      const res = await fetch('/api/team-presets', { credentials: 'include', headers })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.message || `Could not load saved squads (${res.status}).`)
+      if (!data.success || (data.presets != null && !Array.isArray(data.presets))) {
+        throw new Error(data.message || 'The server returned an invalid saved squad list.')
+      }
+      setPresets(Array.isArray(data.presets) ? data.presets : [])
+    } catch (err) {
+      console.error('Error fetching team presets:', err)
+      setPresetsError(/failed to fetch|network/i.test(err?.message || '')
+        ? 'Could not load saved squads. Check your connection and try again.'
+        : err?.message || 'Could not load saved squads. Please try again.')
+    } finally {
+      setPresetsLoading(false)
+    }
+  }, [currentUserFromContext])
 
   const isPhoneViewport = () => (
     typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
@@ -1394,29 +1425,13 @@ function Profile({ onNavigate, selectedUserProfile }) {
           })
           .catch(e => console.error("Error fetching user registrations:", e)));
 
-        // Fetch team presets
-        setPresetsLoading(true);
-        getAuthToken().then(t => {
-          const headers = {};
-          if (t) headers['Authorization'] = `Bearer ${t}`;
-          return fetch('/api/team-presets', {
-            credentials: 'include',
-            headers
-          })
-            .then(res => res.json())
-            .then(data => {
-              if (data.success && data.presets) {
-                setPresets(data.presets);
-              }
-            })
-            .catch(e => console.error("Error fetching team presets:", e))
-            .finally(() => setPresetsLoading(false));
-        });
+        // Fetch team presets; an empty array is a normal successful result.
+        fetchTeamPresets();
       } catch(e) {
         console.error(e)
       }
     }
-  }, [selectedUserProfile, currentUserFromContext])
+  }, [selectedUserProfile, currentUserFromContext, fetchTeamPresets])
 
 
   const handleSavePlayerModal = async (e) => {
@@ -1820,10 +1835,14 @@ function Profile({ onNavigate, selectedUserProfile }) {
       return;
     }
 
-    const token = await getAuthToken();
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
     try {
+      const token = await getAuthToken();
+      if (!token) {
+        triggerToast('Your session is missing or expired. Please sign in again.');
+        return;
+      }
+      const headers = { 'Content-Type': 'application/json' };
+      headers.Authorization = `Bearer ${token}`;
       const res = await fetch('/api/team-presets', {
         method: 'POST',
         credentials: 'include',
@@ -1842,7 +1861,7 @@ function Profile({ onNavigate, selectedUserProfile }) {
       }
     } catch (err) {
       console.error(err);
-      triggerToast('Error saving team preset.');
+      triggerToast('Could not reach the server to save this team preset. Please try again.');
     }
   };
 
@@ -1861,10 +1880,14 @@ function Profile({ onNavigate, selectedUserProfile }) {
       return;
     }
 
-    const token = await getAuthToken();
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
     try {
+      const token = await getAuthToken();
+      if (!token) {
+        triggerToast('Your session is missing or expired. Please sign in again.');
+        return;
+      }
+      const headers = { 'Content-Type': 'application/json' };
+      headers.Authorization = `Bearer ${token}`;
       const res = await fetch(`/api/team-presets/${presetId}`, {
         method: 'PUT',
         credentials: 'include',
@@ -1883,7 +1906,7 @@ function Profile({ onNavigate, selectedUserProfile }) {
       }
     } catch (err) {
       console.error(err);
-      triggerToast('Error updating preset.');
+      triggerToast('Could not reach the server to update this team preset. Please try again.');
     }
   };
 
@@ -1895,10 +1918,13 @@ function Profile({ onNavigate, selectedUserProfile }) {
   };
 
   const handleDeletePreset = async (presetId) => {
-    const token = await getAuthToken();
-    const headers = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
     try {
+      const token = await getAuthToken();
+      if (!token) {
+        triggerToast('Your session is missing or expired. Please sign in again.');
+        return;
+      }
+      const headers = { Authorization: `Bearer ${token}` };
       const res = await fetch(`/api/team-presets/${presetId}`, {
         method: 'DELETE',
         credentials: 'include',
@@ -1911,11 +1937,11 @@ function Profile({ onNavigate, selectedUserProfile }) {
         setDetailsOpenId(null);
         triggerToast('Preset deleted successfully.');
       } else {
-        triggerToast('Failed to delete preset.');
+        triggerToast(data.message || 'Failed to delete preset.');
       }
     } catch (err) {
       console.error(err);
-      triggerToast('Error deleting preset.');
+      triggerToast('Could not reach the server to delete this team preset. Please try again.');
     }
   };
 
@@ -2765,7 +2791,12 @@ className="px-6 min-h-[44px] bg-secondary hover:bg-secondary/95 active:scale-95 
                   })()}
 
                   {/* PRESET CARDS */}
-                  {presetsLoading && presets.length === 0 ? (
+                  {presetsError ? (
+                    <div className="flex items-center justify-center gap-3 rounded-xl border border-rose-500/25 bg-rose-500/5 px-4 py-3 text-xs text-rose-300" role="status">
+                      <span>{presetsError}</span>
+                      <button type="button" onClick={fetchTeamPresets} className="font-semibold underline underline-offset-2">Retry</button>
+                    </div>
+                  ) : presetsLoading && presets.length === 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {[0, 1].map(i => (
                         <div key={i} className="bg-surface-container-highest/55 rounded-2xl border border-outline-variant/25 h-36 animate-pulse" />
@@ -2779,7 +2810,7 @@ className="px-6 min-h-[44px] bg-secondary hover:bg-secondary/95 active:scale-95 
                       </div>
                       <div className="space-y-1">
                         <h4 className="font-headline-md text-sm font-bold text-on-background">
-                          {presetGameFilter === 'All' ? 'No squads saved yet' : `No ${presetGameFilter} squads`}
+                          {presetGameFilter === 'All' ? 'No saved squads yet' : `No ${presetGameFilter} squads`}
                         </h4>
                         <p className="font-body-sm text-[11px] text-on-surface-variant max-w-xs leading-relaxed">
                           Save your team once and auto-fill any tournament registration with one click.

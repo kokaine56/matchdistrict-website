@@ -5982,30 +5982,59 @@ const server = http.createServer(async (req, res) => {
     // Helper to resolve all identity keys (id and uid) for the authenticated user
     const getUserIdentityIds = async (dbPool, authUser) => {
       const rawId = authUser.id || authUser.uid;
+      if (!rawId) throw new Error('Authenticated account has no user ID.');
       const ids = [String(rawId)];
-      try {
-        const uRes = await dbPool.query(
-          'SELECT id, uid FROM users WHERE id::varchar = $1::varchar OR uid::varchar = $1::varchar',
-          [rawId]
+      let userRow = (await dbPool.query(
+        'SELECT id, uid FROM users WHERE id::varchar = $1::varchar OR uid::varchar = $1::varchar LIMIT 1',
+        [rawId]
+      )).rows[0] || null;
+      if (!userRow && authUser.email) {
+        const byEmail = await dbPool.query(
+          'SELECT id, uid FROM users WHERE LOWER(BTRIM(email)) = $1::text LIMIT 1',
+          [String(authUser.email).trim().toLowerCase()]
         );
-        if (uRes.rows.length > 0) {
-          if (uRes.rows[0].id && !ids.includes(String(uRes.rows[0].id))) ids.push(String(uRes.rows[0].id));
-          if (uRes.rows[0].uid && !ids.includes(String(uRes.rows[0].uid))) ids.push(String(uRes.rows[0].uid));
-        }
-      } catch { }
+        userRow = byEmail.rows[0] || null;
+      }
+      if (!userRow) throw new Error(`No user record matched the authenticated preset owner (id: ${rawId}).`);
+      if (userRow.id && !ids.includes(String(userRow.id))) ids.push(String(userRow.id));
+      if (userRow.uid && !ids.includes(String(userRow.uid))) ids.push(String(userRow.uid));
       return ids;
+    };
+
+    const resolvePresetAuth = async (routeName, res) => {
+      const result = await resolveTournamentRegistrationUser(req);
+      if (result.user) return result.user;
+      const error = result.error || { code: 'UNAUTHORIZED', message: 'Sign in to manage team presets.' };
+      const ref = makeErrorRef();
+      logFullError(ref, routeName, 'resolve_preset_owner', new Error(result.reason || error.message));
+      res.writeHead(error.code === 'ACCOUNT_PROFILE_MISSING' ? 404 : 401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: error.code, message: error.code === 'UNAUTHORIZED'
+        ? 'Sign in to manage team presets.'
+        : error.code === 'SESSION_EXPIRED'
+          ? 'Your session is invalid or has expired. Please sign in again.'
+          : 'We could not find a Match District profile for this account. Please contact support.', ref }));
+      return null;
+    };
+
+    const presetDbErrorMessage = (err, action, ref) => {
+      if (err?.code === '23505' && err?.constraint === 'team_presets_pkey') return `The preset could not be saved because its ID conflicted with an existing preset. Please retry. (Ref: ${ref})`;
+      if (err?.code === '23505') return 'A preset with this team name already exists.';
+      if (err?.code === '23502') return 'A required team preset value is missing.';
+      if (err?.code === '22P02') return 'Your signed-in account ID could not be matched to the preset record. Please sign in again.';
+      if (err?.code === '42703' || err?.code === '42P01') return `Squad presets are temporarily unavailable because the database schema is incomplete. Contact support. (Ref: ${ref})`;
+      if (err?.code === '23514') return 'The team preset contains a value that is not allowed.';
+      return `Could not ${action} the team preset because of a server error. Please try again. (Ref: ${ref})`;
     };
 
     // 3c. GET /api/team-presets Service
     if (req.url === '/api/team-presets' && req.method === 'GET') {
+      let presetStep = 'resolve_preset_owner';
       try {
-        const authUser = getAuthUser(req);
-        if (!authUser) {
-          res.writeHead(401, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, error: 'UNAUTHORIZED' }));
-          return;
-        }
+        const authUser = await resolvePresetAuth('GET /api/team-presets', res);
+        if (!authUser) return;
+        presetStep = 'resolve_owner_ids';
         const userIds = await getUserIdentityIds(pool, authUser);
+        presetStep = 'select_presets';
         const dbRes = await pool.query(
           'SELECT * FROM team_presets WHERE user_id = ANY($1::varchar[]) ORDER BY is_default DESC, created_at DESC',
           [userIds]
@@ -6014,9 +6043,9 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: true, presets: Array.isArray(dbRes.rows) ? dbRes.rows : [] }));
       } catch (err) {
         const ref = makeErrorRef();
-        logErrorWithRef(ref, 'GET /api/team-presets', err);
+        logFullError(ref, 'GET /api/team-presets', presetStep, err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: `Something went wrong. Please try again. (Ref: ${ref})` }));
+        res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: presetDbErrorMessage(err, 'load', ref), ref }));
       }
       return;
     }
@@ -6026,15 +6055,15 @@ const server = http.createServer(async (req, res) => {
       let body = '';
       req.on('data', chunk => { body += chunk; });
       req.on('end', async () => {
+        let presetStep = 'resolve_preset_owner';
+        let client = null;
         try {
-          const authUser = getAuthUser(req);
-          if (!authUser) {
-            res.writeHead(401, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'UNAUTHORIZED' }));
-            return;
-          }
+          const authUser = await resolvePresetAuth('POST /api/team-presets', res);
+          if (!authUser) return;
+          presetStep = 'resolve_owner_ids';
           const userIds = await getUserIdentityIds(pool, authUser);
-          const userId = userIds[0];
+          const userId = String(authUser.id);
+          presetStep = 'parse_and_validate_payload';
           const data = JSON.parse(body);
           const parsed = validatePresetPayload(data);
           if (parsed.error) {
@@ -6044,48 +6073,61 @@ const server = http.createServer(async (req, res) => {
           }
           const { presetName, game, teamName, captain, captainUid, players, substitutes, isDefault } = parsed.preset;
 
-          // Limit check: max 4 presets
-          const countRes = await pool.query('SELECT COUNT(*) FROM team_presets WHERE user_id = ANY($1::varchar[])', [userIds]);
-          const currentCount = parseInt(countRes.rows[0].count, 10);
-          if (currentCount >= 4) {
+          client = await pool.connect();
+          presetStep = 'begin_preset_transaction';
+          await client.query('BEGIN');
+          presetStep = 'lock_preset_owner';
+          await client.query('SELECT id FROM users WHERE id = $1::text FOR UPDATE', [userId]);
+          presetStep = 'check_preset_limit';
+          const countRes = await client.query('SELECT COUNT(*) FROM team_presets WHERE user_id = ANY($1::varchar[])', [userIds]);
+          if (parseInt(countRes.rows[0].count, 10) >= 4) {
+            await client.query('ROLLBACK');
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'LIMIT_EXCEEDED', message: 'Maximum limit of 4 presets reached. Please delete an existing preset to save a new one.' }));
+            res.end(JSON.stringify({ success: false, error: 'LIMIT_EXCEEDED', message: 'Maximum limit of 4 team presets reached. Please delete an existing preset to save a new one.' }));
             return;
           }
 
-          // Duplicate check: team_name (case-insensitive, per user + game)
-          const dupRes = await pool.query(
-            'SELECT * FROM team_presets WHERE user_id = ANY($1::varchar[]) AND game = $2::varchar AND LOWER(team_name) = LOWER($3::varchar)',
+          presetStep = 'check_duplicate_preset';
+          const dupRes = await client.query(
+            'SELECT id FROM team_presets WHERE user_id = ANY($1::varchar[]) AND game = $2::varchar AND LOWER(team_name) = LOWER($3::varchar) LIMIT 1',
             [userIds, game, teamName]
           );
           if (dupRes.rows.length > 0) {
+            await client.query('ROLLBACK');
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: false, error: 'DUPLICATE_PRESET', message: 'A preset with this team name already exists for ' + game + '.' }));
             return;
           }
 
-          // Only one default preset per game
+          // Keep the default-preset change and the new preset atomic.
           if (isDefault) {
-            await pool.query('UPDATE team_presets SET is_default = false WHERE user_id = ANY($1::varchar[]) AND game = $2::varchar', [userIds, game]);
+            presetStep = 'clear_default_preset';
+            await client.query('UPDATE team_presets SET is_default = false WHERE user_id = ANY($1::varchar[]) AND game = $2::varchar', [userIds, game]);
           }
 
-          const presetId = 'PRST-' + Date.now().toString().slice(-6);
+          const presetId = 'PRST-' + crypto.randomBytes(12).toString('hex');
           const membersStr = JSON.stringify(players.map(p => p.ign).filter(Boolean));
           const playersStr = JSON.stringify(players);
           const subsStr = JSON.stringify(substitutes);
 
-          const dbRes = await pool.query(
+          presetStep = 'insert_preset_and_roster';
+          const dbRes = await client.query(
             `INSERT INTO team_presets (id, user_id, preset_name, game, team_name, captain, captain_uid, members, players, substitutes, is_default)
            VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::varchar, $7::varchar, $8::text, $9::text, $10::text, $11::boolean) RETURNING *`,
             [presetId, userId, presetName, game, teamName, captain, captainUid || null, membersStr, playersStr, subsStr, isDefault]
           );
+          presetStep = 'commit_preset_transaction';
+          await client.query('COMMIT');
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, preset: dbRes.rows[0] }));
         } catch (err) {
+          if (client) await client.query('ROLLBACK').catch(() => {});
           const ref = makeErrorRef();
-          logErrorWithRef(ref, 'POST /api/team-presets', err);
+          logFullError(ref, 'POST /api/team-presets', presetStep, err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: `Something went wrong. Please try again. (Ref: ${ref})` }));
+          res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: presetDbErrorMessage(err, 'save', ref), ref }));
+        } finally {
+          client?.release();
         }
       });
       return;
@@ -6094,33 +6136,45 @@ const server = http.createServer(async (req, res) => {
     // 3e. DELETE /api/team-presets/:id Service
     if (req.url.startsWith('/api/team-presets/') && req.method === 'DELETE') {
       const id = req.url.split('/api/team-presets/')[1];
+      let presetStep = 'resolve_preset_owner';
+      let client = null;
       try {
-        const authUser = getAuthUser(req);
-        if (!authUser) {
-          res.writeHead(401, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, error: 'UNAUTHORIZED' }));
-          return;
-        }
+        const authUser = await resolvePresetAuth('DELETE /api/team-presets/:id', res);
+        if (!authUser) return;
+        presetStep = 'resolve_owner_ids';
         const userIds = await getUserIdentityIds(pool, authUser);
-        const existRes = await pool.query('SELECT * FROM team_presets WHERE id = $1::varchar', [id]);
+        client = await pool.connect();
+        presetStep = 'begin_preset_delete_transaction';
+        await client.query('BEGIN');
+        presetStep = 'lock_preset';
+        const existRes = await client.query('SELECT * FROM team_presets WHERE id = $1::varchar FOR UPDATE', [id]);
         if (existRes.rows.length === 0) {
+          await client.query('ROLLBACK');
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'NOT_FOUND', message: 'Preset not found.' }));
           return;
         }
         if (!userIds.includes(String(existRes.rows[0].user_id))) {
+          await client.query('ROLLBACK');
           res.writeHead(403, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'FORBIDDEN', message: 'You do not have permission to delete this preset.' }));
           return;
         }
-        await pool.query('DELETE FROM team_presets WHERE id = $1::varchar', [id]);
+        presetStep = 'delete_preset';
+        const deleteRes = await client.query('DELETE FROM team_presets WHERE id = $1::varchar AND user_id = ANY($2::varchar[])', [id, userIds]);
+        if (deleteRes.rowCount !== 1) throw new Error('Preset ownership changed before deletion completed.');
+        presetStep = 'commit_preset_delete_transaction';
+        await client.query('COMMIT');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, message: 'Preset deleted successfully.' }));
       } catch (err) {
+        if (client) await client.query('ROLLBACK').catch(() => {});
         const ref = makeErrorRef();
-        logErrorWithRef(ref, 'DELETE /api/team-presets/:id', err);
+        logFullError(ref, 'DELETE /api/team-presets/:id', presetStep, err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: `Something went wrong. Please try again. (Ref: ${ref})` }));
+        res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: presetDbErrorMessage(err, 'delete', ref), ref }));
+      } finally {
+        client?.release();
       }
       return;
     }
@@ -6131,14 +6185,14 @@ const server = http.createServer(async (req, res) => {
       let body = '';
       req.on('data', chunk => { body += chunk; });
       req.on('end', async () => {
+        let presetStep = 'resolve_preset_owner';
+        let client = null;
         try {
-          const authUser = getAuthUser(req);
-          if (!authUser) {
-            res.writeHead(401, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'UNAUTHORIZED' }));
-            return;
-          }
+          const authUser = await resolvePresetAuth('PUT /api/team-presets/:id', res);
+          if (!authUser) return;
+          presetStep = 'resolve_owner_ids';
           const userIds = await getUserIdentityIds(pool, authUser);
+          presetStep = 'parse_and_validate_payload';
           const data = JSON.parse(body);
           const parsed = validatePresetPayload(data);
           if (parsed.error) {
@@ -6146,28 +6200,36 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ success: false, error: parsed.error, message: parsed.message }));
             return;
           }
-          const existRes = await pool.query('SELECT * FROM team_presets WHERE id = $1::varchar', [id]);
+          client = await pool.connect();
+          presetStep = 'begin_preset_update_transaction';
+          await client.query('BEGIN');
+          presetStep = 'lock_preset';
+          const existRes = await client.query('SELECT * FROM team_presets WHERE id = $1::varchar FOR UPDATE', [id]);
           let { presetName, game, teamName, captain, captainUid, players, substitutes, isDefault } = parsed.preset;
           if (data.preset_name === undefined && existRes.rows.length > 0 && existRes.rows[0].preset_name) {
             presetName = existRes.rows[0].preset_name;
           }
           if (existRes.rows.length === 0) {
+            await client.query('ROLLBACK');
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: false, error: 'NOT_FOUND', message: 'Preset not found.' }));
             return;
           }
           if (!userIds.includes(String(existRes.rows[0].user_id))) {
+            await client.query('ROLLBACK');
             res.writeHead(403, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: false, error: 'FORBIDDEN', message: 'You do not have permission to modify this preset.' }));
             return;
           }
 
           // Duplicate check: team_name (case-insensitive, per user + game) excluding current preset
-          const dupRes = await pool.query(
-            'SELECT * FROM team_presets WHERE user_id = ANY($1::varchar[]) AND game = $2::varchar AND LOWER(team_name) = LOWER($3::varchar) AND id <> $4::varchar',
+          presetStep = 'check_duplicate_preset';
+          const dupRes = await client.query(
+            'SELECT id FROM team_presets WHERE user_id = ANY($1::varchar[]) AND game = $2::varchar AND LOWER(team_name) = LOWER($3::varchar) AND id <> $4::varchar LIMIT 1',
             [userIds, game, teamName, id]
           );
           if (dupRes.rows.length > 0) {
+            await client.query('ROLLBACK');
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: false, error: 'DUPLICATE_PRESET', message: 'A preset with this team name already exists for ' + game + '.' }));
             return;
@@ -6175,26 +6237,34 @@ const server = http.createServer(async (req, res) => {
 
           // Only one default preset per game
           if (isDefault) {
-            await pool.query('UPDATE team_presets SET is_default = false WHERE user_id = ANY($1::varchar[]) AND game = $2::varchar', [userIds, game]);
+            presetStep = 'clear_default_preset';
+            await client.query('UPDATE team_presets SET is_default = false WHERE user_id = ANY($1::varchar[]) AND game = $2::varchar', [userIds, game]);
           }
 
           const membersStr = JSON.stringify(players.map(p => p.ign).filter(Boolean));
           const playersStr = JSON.stringify(players);
           const subsStr = JSON.stringify(substitutes);
 
-          const dbRes = await pool.query(
+          presetStep = 'update_preset_and_roster';
+          const dbRes = await client.query(
             `UPDATE team_presets 
            SET preset_name = $1::varchar, game = $2::varchar, team_name = $3::varchar, captain = $4::varchar, captain_uid = $5::varchar, members = $6::text, players = $7::text, substitutes = $8::text, is_default = $9::boolean, updated_at = CURRENT_TIMESTAMP
-           WHERE id = $10::varchar RETURNING *`,
-            [presetName, game, teamName, captain, captainUid || null, membersStr, playersStr, subsStr, isDefault, id]
+           WHERE id = $10::varchar AND user_id = ANY($11::varchar[]) RETURNING *`,
+            [presetName, game, teamName, captain, captainUid || null, membersStr, playersStr, subsStr, isDefault, id, userIds]
           );
+          if (!dbRes.rows.length) throw new Error('Preset was no longer owned by the authenticated account.');
+          presetStep = 'commit_preset_update_transaction';
+          await client.query('COMMIT');
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, preset: dbRes.rows[0] }));
         } catch (err) {
+          if (client) await client.query('ROLLBACK').catch(() => {});
           const ref = makeErrorRef();
-          logErrorWithRef(ref, 'PUT /api/team-presets/:id', err);
+          logFullError(ref, 'PUT /api/team-presets/:id', presetStep, err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: `Something went wrong. Please try again. (Ref: ${ref})` }));
+          res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: presetDbErrorMessage(err, 'update', ref), ref }));
+        } finally {
+          client?.release();
         }
       });
       return;

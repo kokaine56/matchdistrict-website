@@ -579,9 +579,9 @@ function RegistrationPage({ onNavigate }) {
     setForm(prev => {
       const next = {
         ...prev,
-        teamName: preset.team_name || prev.teamName,
+        teamName: preset.team_name || '',
         captainIgn: preset.captain || '',
-        captainUid: preset.captain_uid || prev.captainUid,
+        captainUid: preset.captain_uid || '',
         players: pad(playersRaw, 3),
         substitutes: pad(subsRaw, 2),
       }
