@@ -453,6 +453,19 @@ function logErrorWithRef(ref, routeName, err, step = 'execute') {
   console.error(`[ERROR Ref:${ref}] route="${routeName}" step="${step}" pgCode=${code}${statusStr}${detail} message="${msg}"`);
 }
 
+function logFullError(ref, routeName, step, err) {
+  const fields = ['code', 'detail', 'column', 'constraint', 'table', 'schema', 'routine', 'file', 'line', 'severity', 'hint', 'where', 'position'];
+  const database = Object.fromEntries(fields.filter((key) => err?.[key] !== undefined).map((key) => [key, err[key]]));
+  console.error(`[REGISTRATION ERROR Ref:${ref}] ${JSON.stringify({
+    route: routeName,
+    step,
+    name: err?.name || 'Error',
+    message: err?.message || String(err),
+    stack: err?.stack || null,
+    ...database,
+  })}`);
+}
+
 // ─────────────────────────────────────────────────────────────
 // Shared Session Cookie Engine
 // Ensures set and clear operations use identical attributes so cookies never drift.
@@ -964,7 +977,7 @@ pool.on('error', (err) => {
   console.error('⚠️ [PG POOL ERROR in server.js]:', err?.message || err);
 });
 
-async function ensureSupabaseProfile(client, user) {
+async function ensureSupabaseProfile(client, user, onStep) {
   if (!user || !(user.uid || user.id) || !user.email) return;
   const profileValues = [user.uid || user.id, user.uid || null, user.name || null, user.email, user.gamerTag || user['gamerTag'] || null,
   user.role || 'gamer', user.roles || ['user'], user.tier || 'Amateur', user.avatar || null, user.banner || null,
@@ -976,6 +989,7 @@ async function ensureSupabaseProfile(client, user) {
 
   // Only enrich the same profile when its email still matches. Never copy the
   // incoming identity over another profile that already owns this email.
+  onStep?.('update_profile_gamertag');
   await client.query(
     `UPDATE profiles
      SET "gamerTag" = COALESCE(profiles."gamerTag", $5)
@@ -983,6 +997,7 @@ async function ensureSupabaseProfile(client, user) {
     profileValues.slice(0, 5)
   );
 
+  onStep?.('profile_insert');
   const insertResult = await client.query(
     `INSERT INTO profiles (id, uid, name, email, "gamerTag", role, roles, tier, avatar, banner, phone, status,
                           "riotId", "bgmiId", "steamId", "discordTag", "socialLinks", "orgName", "orgMotto", "orgHandle", "orgImage", "orgBio")
@@ -1054,6 +1069,10 @@ async function initDb() {
         ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_username VARCHAR(100);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_linked_at TIMESTAMP WITH TIME ZONE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS google_linked_at TIMESTAMP WITH TIME ZONE;
+        ALTER TABLE users ALTER COLUMN discord_user_id DROP NOT NULL;
+        ALTER TABLE users ALTER COLUMN discord_username DROP NOT NULL;
+        ALTER TABLE users ALTER COLUMN discord_linked_at DROP NOT NULL;
+        ALTER TABLE users ALTER COLUMN google_linked_at DROP NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
         CREATE INDEX IF NOT EXISTS idx_users_discord_user_id ON users(discord_user_id);
         CREATE INDEX IF NOT EXISTS idx_users_google_linked_at ON users(google_linked_at);
@@ -2505,6 +2524,8 @@ const server = http.createServer(async (req, res) => {
       });
       req.on('end', async () => {
         if (bodySize > MAX_AUTH_BODY) return;
+        const errorRef = makeErrorRef();
+        let verificationStep = 'parse_request';
         try {
           const parsed = JSON.parse(body);
           const email = (parsed.email || '').trim().toLowerCase();
@@ -2517,9 +2538,11 @@ const server = http.createServer(async (req, res) => {
           }
 
           const verifyFlow = parsed.purpose === 'gamertag_change' ? 'gamertag' : 'signup';
+          verificationStep = 'otp_rate_limit_check';
           if (!(await accountSecurity.guardVerify(req, res, { email }))) return;
 
           const now = new Date();
+          verificationStep = 'otp_lookup';
           const otpRes = await pool.query('SELECT * FROM otps WHERE LOWER(BTRIM(email)) = $1', [email]);
           if (otpRes.rows.length === 0) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -2530,7 +2553,9 @@ const server = http.createServer(async (req, res) => {
           const otpRecord = otpRes.rows[0];
 
           // Check expiry
+          verificationStep = 'otp_expiry_check';
           if (new Date(otpRecord.expires_at) <= now) {
+            verificationStep = 'expired_otp_cleanup';
             await pool.query('DELETE FROM otps WHERE LOWER(BTRIM(email)) = $1', [email]);
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: false, error: 'OTP_EXPIRED', message: 'Verification code has expired. Please request a new one.' }));
@@ -2538,8 +2563,10 @@ const server = http.createServer(async (req, res) => {
           }
 
           // Check attempts limit (max 5)
+          verificationStep = 'otp_attempt_limit_check';
           const attempts = parseInt(otpRecord.attempts || 0, 10);
           if (attempts >= 5) {
+            verificationStep = 'attempted_out_otp_cleanup';
             await pool.query('DELETE FROM otps WHERE LOWER(BTRIM(email)) = $1', [email]);
             res.writeHead(429, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
@@ -2551,13 +2578,16 @@ const server = http.createServer(async (req, res) => {
           }
 
           // Timing-safe comparison
+          verificationStep = 'otp_compare';
           const otpBuf = Buffer.from(otp);
           const storedBuf = Buffer.from(otpRecord.otp);
           const isMatch = otpBuf.length === storedBuf.length && crypto.timingSafeEqual(otpBuf, storedBuf);
 
           if (!isMatch) {
             // Count wrong codes in the database-backed guard (5 wrong / 15 min => timeout).
+            verificationStep = 'record_invalid_otp_attempt';
             if (await accountSecurity.recordFailure(req, res, { flow: verifyFlow, email })) return;
+            verificationStep = 'increment_invalid_otp_attempt';
             const attemptRes = await pool.query(
               `UPDATE otps SET attempts = COALESCE(attempts, 0) + 1
              WHERE email = $1 AND expires_at > NOW() AND COALESCE(attempts, 0) < 5
@@ -2579,6 +2609,7 @@ const server = http.createServer(async (req, res) => {
 
           // Keep a successful result reusable for retries/double submits. The OTP
           // remains database-backed and single-use at registration finalization.
+          verificationStep = 'find_existing_verification_token';
           const tokenRes = await pool.query(
             `SELECT verification_token FROM temp_users WHERE LOWER(BTRIM(email)) = $1
            AND verified = true AND expires_at > NOW() AND verification_token IS NOT NULL LIMIT 1`, [email]
@@ -2589,6 +2620,7 @@ const server = http.createServer(async (req, res) => {
             return;
           }
           const verificationToken = crypto.randomBytes(32).toString('hex');
+          verificationStep = 'mark_temporary_user_verified';
           const verifiedRes = await pool.query(
             `UPDATE temp_users SET verified = true, verification_token = COALESCE(verification_token, $1)
            WHERE LOWER(BTRIM(email)) = $2 AND expires_at > NOW() AND EXISTS (
@@ -2603,8 +2635,10 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
+          verificationStep = 'clear_verification_failures';
           accountSecurity.clearFailures(req, { flow: verifyFlow, email });
 
+          verificationStep = 'send_verification_response';
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             success: true,
@@ -2612,8 +2646,9 @@ const server = http.createServer(async (req, res) => {
             verificationToken: verifiedRes.rows[0].verification_token
           }));
         } catch (err) {
+          logFullError(errorRef, 'POST /api/auth/verify-otp', verificationStep, err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, error: err.message }));
+          res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: 'Could not verify the code because of a server error. Please try again.' }));
         }
       });
       return;
@@ -4895,6 +4930,8 @@ const server = http.createServer(async (req, res) => {
       });
       req.on('end', async () => {
         if (bodySize > MAX_AUTH_BODY) return;
+        const errorRef = makeErrorRef();
+        let registrationTempStep = 'parse_request';
         try {
           const userData = JSON.parse(body);
           const email = (userData.email || '').trim().toLowerCase();
@@ -4905,9 +4942,11 @@ const server = http.createServer(async (req, res) => {
           }
 
           // Cleanup expired temp users
+          registrationTempStep = 'cleanup_expired_temporary_registrations';
           await pool.query('DELETE FROM temp_users WHERE expires_at < NOW()');
 
           // Check if the user email is already registered permanently
+          registrationTempStep = 'check_existing_user';
           const checkUser = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
           if (checkUser.rows.length > 0) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -4916,8 +4955,10 @@ const server = http.createServer(async (req, res) => {
           }
 
           const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+          registrationTempStep = 'password_hash';
           const hashedPassword = hashPassword(userData.password || '');
 
+          registrationTempStep = 'temporary_registration_insert';
           await pool.query(
             `INSERT INTO temp_users (email, name, password, "gamerTag", role, verified, verification_token, expires_at)
            VALUES ($1, $2, $3, $4, $5, false, NULL, $6)
@@ -4939,8 +4980,9 @@ const server = http.createServer(async (req, res) => {
             message: 'Details submitted successfully. Proceeding to verification.'
           }));
         } catch (err) {
+          logFullError(errorRef, 'POST /api/auth/register-temp', registrationTempStep, err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, error: err.message }));
+          res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: 'Registration details could not be saved because of a server error. Please try again.' }));
         }
       });
       return;
@@ -5090,22 +5132,26 @@ const server = http.createServer(async (req, res) => {
           const defaultGamerTag = tempUser.gamerTag || ('@' + (tempUser.name || tempUser.email.split('@')[0]).toLowerCase().replace(/\s+/g, '_'));
 
           let newUser = null;
+          let token = null;
+          let sessionCookie = null;
           const registrationClient = await pool.connect();
           try {
             registrationStep = 'begin_account_transaction';
             await registrationClient.query('BEGIN');
-            registrationStep = 'insert_public_user';
-            newUser = await insertWithDistrictId((districtId) => registrationClient.query(
-              `INSERT INTO users (id, uid, name, email, password, "gamerTag", role, roles, tier, "orgApplicationStatus", avatar, status, district_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-             ON CONFLICT (district_id) DO NOTHING RETURNING *`,
-              [userUUID, userUUID, tempUser.name || '', tempUser.email, tempUser.password,
-                defaultGamerTag, defaultRole, defaultRoles, 'Amateur', 'none',
-                'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=500&q=80',
-                defaultStatus, districtId]
-            ));
-            registrationStep = 'insert_profile';
-            await ensureSupabaseProfile(registrationClient, newUser);
+            registrationStep = 'district_id_generation';
+            newUser = await insertWithDistrictId((districtId) => {
+              registrationStep = 'users_insert';
+              return registrationClient.query(
+                `INSERT INTO users (id, uid, name, email, password, "gamerTag", role, roles, tier, "orgApplicationStatus", avatar, status, district_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+               ON CONFLICT (district_id) DO NOTHING RETURNING *`,
+                [userUUID, userUUID, tempUser.name || '', tempUser.email, tempUser.password,
+                  defaultGamerTag, defaultRole, defaultRoles, 'Amateur', 'none',
+                  'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=500&q=80',
+                  defaultStatus, districtId]
+              );
+            });
+            await ensureSupabaseProfile(registrationClient, newUser, (step) => { registrationStep = step; });
             registrationStep = 'verify_profile';
             const profileCheck = await registrationClient.query(
               'SELECT 1 FROM profiles WHERE id = $1 AND email = $2',
@@ -5119,23 +5165,27 @@ const server = http.createServer(async (req, res) => {
             registrationStep = 'consume_temporary_registration';
             const consumed = await registrationClient.query('DELETE FROM temp_users WHERE LOWER(BTRIM(email)) = $1', [email]);
             if (consumed.rowCount !== 1) throw new Error('The temporary registration expired before account creation completed.');
+            registrationStep = 'session_token_creation';
+            token = signJwt({ email: newUser.email, role: newUser.role, roles: newUser.roles || [newUser.role], id: newUser.uid || newUser.id });
+            registrationStep = 'session_cookie_creation';
+            sessionCookie = buildSessionCookie(token, req);
             registrationStep = 'commit_account_transaction';
             await registrationClient.query('COMMIT');
             accountTransactionCommitted = true;
             console.log(`\r\n📦 [MATCH DISTRICT DB] User "${newUser.email}" registered permanently.\r\n`);
 
             // Log final terms acceptance
-            logTermsAcceptance(pool, newUser.email, newUser.id || newUser.uid, 'final_register', req).catch(() => { });
+            logTermsAcceptance(pool, newUser.email, newUser.id || newUser.uid, 'final_register', req)
+              .catch((err) => logFullError(errorRef, 'POST /api/auth/register', 'post_commit_terms_acceptance_log', err));
           } catch (dbErr) {
             await registrationClient.query('ROLLBACK').catch(() => { });
             const duplicateEmail = dbErr.code === '23505' && /email/i.test(dbErr.constraint || '');
-            logErrorWithRef(errorRef, 'POST /api/auth/register', dbErr, registrationStep);
-            console.error(`[AUTH REGISTER] Account creation transaction failed [Ref:${errorRef}] step="${registrationStep}":`, dbErr);
+            logFullError(errorRef, 'POST /api/auth/register', registrationStep, dbErr);
             if (createdSupabaseAuthUser && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userUUID || '')) {
               try {
                 await pool.query('DELETE FROM auth.users WHERE id = $1::uuid', [userUUID]);
               } catch (cleanupErr) {
-                console.error(`[AUTH REGISTER] Could not roll back Supabase Auth account [Ref:${errorRef}]:`, cleanupErr);
+                logFullError(errorRef, 'POST /api/auth/register', 'supabase_auth_rollback_cleanup', cleanupErr);
               }
             }
             res.writeHead(duplicateEmail ? 409 : 500, { 'Content-Type': 'application/json' });
@@ -5151,8 +5201,6 @@ const server = http.createServer(async (req, res) => {
             registrationClient.release();
           }
 
-          const token = signJwt({ email: newUser.email, role: newUser.role, roles: newUser.roles || [newUser.role], id: newUser.uid || newUser.id });
-
           // Strip sensitive fields from user response
           const safeUser = { ...newUser };
           delete safeUser.password;
@@ -5161,17 +5209,16 @@ const server = http.createServer(async (req, res) => {
 
           res.writeHead(200, {
             'Content-Type': 'application/json',
-            'Set-Cookie': buildSessionCookie(token, req)
+            'Set-Cookie': sessionCookie
           });
           res.end(JSON.stringify({ success: true, token, user: safeUser }));
         } catch (err) {
-          logErrorWithRef(errorRef, 'POST /api/auth/register', err, registrationStep);
-          console.error(`[AUTH REGISTER] Registration request failed [Ref:${errorRef}] step="${registrationStep}":`, err);
+          logFullError(errorRef, 'POST /api/auth/register', registrationStep, err);
           if (!accountTransactionCommitted && createdSupabaseAuthUser && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userUUID || '')) {
             try {
               await pool.query('DELETE FROM auth.users WHERE id = $1::uuid', [userUUID]);
             } catch (cleanupErr) {
-              console.error(`[AUTH REGISTER] Could not roll back Supabase Auth account [Ref:${errorRef}]:`, cleanupErr);
+              logFullError(errorRef, 'POST /api/auth/register', 'supabase_auth_rollback_cleanup', cleanupErr);
             }
           }
           res.writeHead(500, { 'Content-Type': 'application/json' });

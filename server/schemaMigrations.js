@@ -214,6 +214,15 @@ export async function runSchemaMigrations(clientOrPool) {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(32);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS username_last_changed TIMESTAMP;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users (lower(username)) WHERE username IS NOT NULL;
+      -- These are optional identity/profile attributes. Legacy NOT NULL flags
+      -- must not block account creation when the signup form does not collect them.
+      ALTER TABLE users ALTER COLUMN username DROP NOT NULL;
+      ALTER TABLE users ALTER COLUMN "riotId" DROP NOT NULL;
+      ALTER TABLE users ALTER COLUMN "bgmiId" DROP NOT NULL;
+      ALTER TABLE users ALTER COLUMN "steamId" DROP NOT NULL;
+      ALTER TABLE users ALTER COLUMN "discordTag" DROP NOT NULL;
+      ALTER TABLE users ALTER COLUMN google_id DROP NOT NULL;
+      ALTER TABLE users ALTER COLUMN discord_id DROP NOT NULL;
 
       CREATE TABLE IF NOT EXISTS user_discord_connections (
         user_id VARCHAR(50) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -1698,6 +1707,13 @@ export async function runSchemaMigrations(clientOrPool) {
       END $$;
 
       ALTER TABLE profiles ADD COLUMN IF NOT EXISTS username VARCHAR(32);
+      ALTER TABLE profiles ALTER COLUMN username DROP NOT NULL;
+      -- Signup does not collect these optional game/provider identifiers.
+      -- Clear legacy NOT NULL flags without changing any existing profile data.
+      ALTER TABLE profiles ALTER COLUMN "riotId" DROP NOT NULL;
+      ALTER TABLE profiles ALTER COLUMN "bgmiId" DROP NOT NULL;
+      ALTER TABLE profiles ALTER COLUMN "steamId" DROP NOT NULL;
+      ALTER TABLE profiles ALTER COLUMN "discordTag" DROP NOT NULL;
 
       -- 8b. Leaderboard & Qualification Additive Tables (Idempotent)
       CREATE TABLE IF NOT EXISTS tournament_district_save_states (
