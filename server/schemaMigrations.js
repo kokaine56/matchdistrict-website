@@ -1679,12 +1679,12 @@ export async function runSchemaMigrations(clientOrPool) {
             using_sql := policy->>'qual';
             check_sql := policy->>'with_check';
             IF using_sql IS NOT NULL THEN
-              using_sql := regexp_replace(using_sql, 'auth\.uid\(\)([[:space:]]*=[[:space:]]*(profiles\.)?id)', '(auth.uid())::text\1', 'g');
-              using_sql := regexp_replace(using_sql, '((profiles\.)?id[[:space:]]*=[[:space:]]*)auth\.uid\(\)', '\1(auth.uid())::text', 'g');
+              using_sql := regexp_replace(using_sql, 'auth\\.uid\\(\\)([[:space:]]*=[[:space:]]*(profiles\\.)?id)', '(auth.uid())::text\\1', 'g');
+              using_sql := regexp_replace(using_sql, '((profiles\\.)?id[[:space:]]*=[[:space:]]*)auth\\.uid\\(\\)', '\\1(auth.uid())::text', 'g');
             END IF;
             IF check_sql IS NOT NULL THEN
-              check_sql := regexp_replace(check_sql, 'auth\.uid\(\)([[:space:]]*=[[:space:]]*(profiles\.)?id)', '(auth.uid())::text\1', 'g');
-              check_sql := regexp_replace(check_sql, '((profiles\.)?id[[:space:]]*=[[:space:]]*)auth\.uid\(\)', '\1(auth.uid())::text', 'g');
+              check_sql := regexp_replace(check_sql, 'auth\\.uid\\(\\)([[:space:]]*=[[:space:]]*(profiles\\.)?id)', '(auth.uid())::text\\1', 'g');
+              check_sql := regexp_replace(check_sql, '((profiles\\.)?id[[:space:]]*=[[:space:]]*)auth\\.uid\\(\\)', '\\1(auth.uid())::text', 'g');
             END IF;
 
             EXECUTE format(
