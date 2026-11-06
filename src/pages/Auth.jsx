@@ -776,6 +776,22 @@ function Auth({ onNavigate, initialMode = 'login' }) {
   const isPasswordValid = regPassStrength.hasMinLen && regPassStrength.hasAlphabet && regPassStrength.hasNumber && regPassStrength.hasSymbol
   const isConfirmPasswordValid = regForm.confirmPassword === regForm.password
 
+  const registerDisabledReason = (() => {
+    if (isLoading) return 'Registration is in progress.'
+    if (regSpamCooldownSeconds > 0) return `Please wait ${regSpamCooldownSeconds}s before trying again.`
+    if (regNameAbuse) return 'Please enter a valid name.'
+    if (!regForm.name.trim()) return 'Enter your name.'
+    if (!isNameValid) return 'Name must only contain letters and spaces (max 20 characters).'
+    if (!regForm.email.trim() || !isEmailValid) return 'Enter a valid email.'
+    if (!regPassStrength.hasMinLen || !regPassStrength.hasAlphabet || !regPassStrength.hasNumber || !regPassStrength.hasSymbol) {
+      return 'Password must be at least 6 characters and include a letter, number, and symbol.'
+    }
+    if (!regForm.confirmPassword) return 'Confirm your password.'
+    if (!isConfirmPasswordValid) return 'Passwords do not match.'
+    if (!regForm.agreeTerms) return 'Accept the Terms & Privacy Policy.'
+    return ''
+  })()
+
   const isRegisterFormValid = 
     isNameValid &&
     isEmailValid &&
@@ -2221,7 +2237,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
                               placeholder="Full Name (Max 20 chars)" 
                               maxLength={20}
                               value={regForm.name} 
-                              onChange={(e) => { setRegForm({...regForm, name: e.target.value}); setIsFormEditedSinceLastSubmit(true); setBackWithoutEditCount(0); }}
+                              onChange={(e) => { setRegForm((current) => ({...current, name: e.target.value})); setIsFormEditedSinceLastSubmit(true); setBackWithoutEditCount(0); }}
                               className="w-full h-11 bg-slate-50 dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl pl-11 pr-4 text-slate-900 dark:text-white font-body-md font-bold focus:border-primary focus:ring-[3px] focus:ring-primary/10 outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-on-surface-variant/30" 
                               required 
                             />
@@ -2242,7 +2258,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
                             autoComplete="email"
                             placeholder="Email Address" 
                             value={regForm.email} 
-                            onChange={(e) => { setRegForm({...regForm, email: e.target.value}); setIsFormEditedSinceLastSubmit(true); setBackWithoutEditCount(0); }}
+                            onChange={(e) => { setRegForm((current) => ({...current, email: e.target.value})); setIsFormEditedSinceLastSubmit(true); setBackWithoutEditCount(0); }}
                             className="w-full h-11 bg-slate-50 dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl pl-11 pr-4 text-slate-900 dark:text-white font-body-md font-bold focus:border-primary focus:ring-[3px] focus:ring-primary/10 outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-on-surface-variant/30" 
                             required 
                           />
@@ -2263,7 +2279,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
                             autoComplete="new-password"
                             placeholder="Password (Min 6 characters)" 
                             value={regForm.password} 
-                            onChange={(e) => { setRegForm({...regForm, password: e.target.value}); setIsFormEditedSinceLastSubmit(true); setBackWithoutEditCount(0); }}
+                            onChange={(e) => { setRegForm((current) => ({...current, password: e.target.value})); setIsFormEditedSinceLastSubmit(true); setBackWithoutEditCount(0); }}
                             className="w-full h-11 bg-slate-50 dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl pl-11 pr-11 text-slate-900 dark:text-white font-body-md font-bold focus:border-primary focus:ring-[3px] focus:ring-primary/10 outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-on-surface-variant/30" 
                             required 
                           />
@@ -2290,7 +2306,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
                             autoComplete="new-password"
                             placeholder="Confirm Password" 
                             value={regForm.confirmPassword} 
-                            onChange={(e) => { setRegForm({...regForm, confirmPassword: e.target.value}); setIsFormEditedSinceLastSubmit(true); setBackWithoutEditCount(0); }}
+                            onChange={(e) => { setRegForm((current) => ({...current, confirmPassword: e.target.value})); setIsFormEditedSinceLastSubmit(true); setBackWithoutEditCount(0); }}
                             className="w-full h-11 bg-slate-50 dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl pl-11 pr-4 text-slate-900 dark:text-white font-body-md font-bold focus:border-primary focus:ring-[3px] focus:ring-primary/10 outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-on-surface-variant/30" 
                             required 
                           />
@@ -2307,7 +2323,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
                             <input 
                               type="checkbox" 
                               checked={regForm.agreeTerms} 
-                              onChange={(e) => setRegForm({...regForm, agreeTerms: e.target.checked})} 
+                              onChange={(e) => setRegForm((current) => ({...current, agreeTerms: e.target.checked}))} 
                               className="peer appearance-none w-4.5 h-4.5 rounded border border-slate-300 dark:border-white/20 checked:bg-slate-200 dark:checked:bg-primary transition-all cursor-pointer" 
                               required 
                             />
@@ -2328,6 +2344,9 @@ function Auth({ onNavigate, initialMode = 'login' }) {
                       <span>Join The Arena</span>
                       <span className="material-symbols-outlined text-[18px]">sports_esports</span>
                     </button>
+                    {registerDisabledReason && (
+                      <p className="text-red-500 text-[10px] font-bold pl-1" role="status">{registerDisabledReason}</p>
+                    )}
                   </form>
 
                   {/* Social Auth Option on Register */}
