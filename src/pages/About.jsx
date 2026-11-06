@@ -328,7 +328,7 @@ function About({ onNavigate }) {
             <button onClick={() => onNavigate && onNavigate('home')} className="font-headline-md text-[16px] font-extrabold text-primary tracking-tight hover:opacity-85 transition-opacity">
                Match District
             </button>
-            <p className="font-body-sm text-[10px] text-on-surface-variant opacity-60">&copy; 2026 MATCH DISTRICT. ALL RIGHTS RESERVED.</p>
+            <p className="font-body-sm text-[10px] text-on-surface-variant opacity-60">© 2026 MATCH DISTRICT. ALL RIGHTS RESERVED.</p>
           </div>
         </div>
       </footer>

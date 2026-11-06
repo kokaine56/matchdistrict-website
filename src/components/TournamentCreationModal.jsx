@@ -113,7 +113,7 @@ export default function TournamentCreationModal({
                 {isEditingExisting ? 'Edit Tournament' : 'Tournament Creation Manager'}
               </h3>
               <p className="text-[10px] text-white/40 font-medium mt-0.5">
-                Step {createStep} of 8 &mdash; {STEP_TITLES[createStep - 1]}
+                Step {createStep} of 8 — {STEP_TITLES[createStep - 1]}
               </p>
             </div>
           </div>

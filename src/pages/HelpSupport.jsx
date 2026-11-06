@@ -396,7 +396,7 @@ function HelpSupport({ onNavigate }) {
               Match District
             </button>
             <p className="text-[10px] text-slate-400 dark:text-slate-500">
-              &copy; {new Date().getFullYear()} MATCH DISTRICT. ALL RIGHTS RESERVED.
+              © {new Date().getFullYear()} MATCH DISTRICT. ALL RIGHTS RESERVED.
             </p>
           </div>
         </div>

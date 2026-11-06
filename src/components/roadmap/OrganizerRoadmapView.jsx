@@ -1292,7 +1292,7 @@ export default function OrganizerRoadmapView({
           <div className="space-y-3">
             {(!currentRound.days || currentRound.days.length === 0) ? (
               <div className="p-4 text-center text-xs text-slate-400">
-                No match days added yet. Click &quot;Add Day&quot; to begin.
+                No match days added yet. Click "Add Day" to begin.
               </div>
             ) : (
               currentRound.days.map((day, dIdx) => {

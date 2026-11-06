@@ -78,7 +78,7 @@ export const ConfirmIdentityOTP = ({ email, onVerify, onResend, onBack, cooldown
         disabled={otp.join('').length !== 6 || isLoading}
         className="w-full py-3.5 mt-8 text-sm font-bold text-white transition-all shadow-md bg-indigo-600 rounded-xl hover:bg-indigo-700 hover:shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
       >
-        <span>{isLoading ? 'Verifying...' : 'Verify Code &amp; Join'}</span>
+        <span>{isLoading ? 'Verifying...' : 'Verify Code & Join'}</span>
       </button>
 
       <div className="flex flex-col items-center mt-6 gap-4">

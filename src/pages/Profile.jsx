@@ -2048,7 +2048,7 @@ function Profile({ onNavigate, selectedUserProfile }) {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-label-caps text-[10px] text-on-surface-variant uppercase tracking-wider block">Official Rules &amp; Guidelines</label>
+                    <label className="font-label-caps text-[10px] text-on-surface-variant uppercase tracking-wider block">Official Rules & Guidelines</label>
                     <textarea 
                       rows="6"
                       value={newTourney.rules} 
@@ -2552,7 +2552,7 @@ className="px-6 min-h-[44px] bg-secondary hover:bg-secondary/95 active:scale-95 
                     <div>
                       <h3 className="font-headline-md text-sm font-bold text-on-background flex items-center gap-2">
                         <span className="material-symbols-outlined text-secondary text-base">groups_2</span>
-                        Teams &amp; Squads
+                        Teams & Squads
                       </h3>
                       <p className="font-body-sm text-[10px] text-on-surface-variant mt-0.5">
                         Save up to 4 squad presets and reuse them during tournament registration.
@@ -3284,7 +3284,7 @@ className="px-6 min-h-[44px] bg-secondary hover:bg-secondary/95 active:scale-95 
             <button onClick={() => onNavigate && onNavigate('home')} className="font-headline-md text-[16px] font-extrabold text-primary tracking-tight hover:opacity-85 transition-opacity">
               Match District
             </button>
-            <p className="font-body-sm text-[10px] text-on-surface-variant opacity-60">&copy; 2024 MATCH DISTRICT. ALL RIGHTS RESERVED.</p>
+            <p className="font-body-sm text-[10px] text-on-surface-variant opacity-60">© 2024 MATCH DISTRICT. ALL RIGHTS RESERVED.</p>
           </div>
         </div>
       </footer>
@@ -3368,7 +3368,7 @@ className="px-6 min-h-[44px] bg-secondary hover:bg-secondary/95 active:scale-95 
                   onClick={handleCropConfirm} 
                   className="px-5 py-2 bg-primary hover:bg-primary/90 transition-all text-on-primary rounded-lg font-headline-md text-xs font-bold shadow-sm flex items-center gap-1"
                 >
-                  <span className="material-symbols-outlined text-sm">check</span> Apply &amp; Upload
+                  <span className="material-symbols-outlined text-sm">check</span> Apply & Upload
                 </button>
               </div>
             </div>

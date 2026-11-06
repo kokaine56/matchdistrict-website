@@ -205,7 +205,7 @@ function PrivacyPolicy({ onNavigate }) {
                   <div className="border-t border-slate-100 pt-5 space-y-3">
                     <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                       <span className="material-symbols-outlined text-blue-500 text-base">verified_user</span>
-                      For Organizers (KYC &amp; Verification)
+                      For Organizers (KYC & Verification)
                     </h3>
                     <p className="text-sm text-slate-600">
                       To become an approved organizer, we collect mandatory Know Your Customer (KYC) data, which includes:
@@ -302,7 +302,7 @@ function PrivacyPolicy({ onNavigate }) {
                   <span className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-base">cookie</span>
                   </span>
-                  3. Cookies &amp; Tracking
+                  3. Cookies & Tracking
                 </h2>
 
                 <p className="text-sm text-slate-600 leading-relaxed">
@@ -472,7 +472,7 @@ function PrivacyPolicy({ onNavigate }) {
                 <ul className="space-y-1.5 text-sm text-slate-600">
                   <li className="flex items-start gap-2">
                     <span className="text-blue-500 mt-0.5 shrink-0">•</span>
-                    <span><strong className="text-slate-800">Review &amp; Access:</strong> Download a package containing all details linked to your gamer tag.</span>
+                    <span><strong className="text-slate-800">Review & Access:</strong> Download a package containing all details linked to your gamer tag.</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-blue-500 mt-0.5 shrink-0">•</span>
@@ -534,7 +534,7 @@ function PrivacyPolicy({ onNavigate }) {
                   <span className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-base">account_balance</span>
                   </span>
-                  9. Payment, Pricing &amp; Escrow Policy
+                  9. Payment, Pricing & Escrow Policy
                 </h2>
 
                 <p className="text-sm text-slate-600 leading-relaxed">
@@ -552,7 +552,7 @@ function PrivacyPolicy({ onNavigate }) {
                       </svg>
                     </div>
                     <div className="space-y-1">
-                      <h3 className="text-sm font-bold text-slate-900">Entry Fees &amp; Escrow</h3>
+                      <h3 className="text-sm font-bold text-slate-900">Entry Fees & Escrow</h3>
                       <p className="text-sm text-slate-600 leading-relaxed">
                         Any entry fees collected for tournaments are held securely until the tournament concludes. We do not utilize your funds for platform operations.
                       </p>
@@ -602,7 +602,7 @@ function PrivacyPolicy({ onNavigate }) {
                   <span className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-base">undo</span>
                   </span>
-                  10. Refund &amp; Cancellation Policy
+                  10. Refund & Cancellation Policy
                 </h2>
 
                 <p className="text-sm text-slate-600 leading-relaxed">
@@ -650,7 +650,7 @@ function PrivacyPolicy({ onNavigate }) {
                       </svg>
                     </div>
                     <div className="space-y-1">
-                      <h3 className="text-sm font-bold text-slate-900">No-Shows &amp; Disqualifications</h3>
+                      <h3 className="text-sm font-bold text-slate-900">No-Shows & Disqualifications</h3>
                       <p className="text-sm text-slate-600 leading-relaxed">
                         No refunds will be issued for players or teams who fail to check in, do not show up for their scheduled matches, or are disqualified for violating fair play and competitive integrity rules (e.g., cheating, scripting, smurfing).
                       </p>
@@ -788,7 +788,7 @@ function PrivacyPolicy({ onNavigate }) {
             <button onClick={() => onNavigate && onNavigate('home')} className="text-base font-extrabold text-blue-600 tracking-tight hover:opacity-80 transition-opacity">
               Match District
             </button>
-            <p className="text-xs text-slate-400">&copy; {new Date().getFullYear()} MATCH DISTRICT. ALL RIGHTS RESERVED.</p>
+            <p className="text-xs text-slate-400">© {new Date().getFullYear()} MATCH DISTRICT. ALL RIGHTS RESERVED.</p>
           </div>
         </div>
       </footer>

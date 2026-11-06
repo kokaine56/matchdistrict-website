@@ -422,10 +422,17 @@ body,
 
 /* Promote CSS-animated elements to their own GPU compositing layer */
 .animate-marquee,
-.animate-spin,
 [class*="animate-bounce"] {
   will-change: transform;
   transform: translateZ(0);
+}
+
+/* Keep loading indicators smooth and consistent, including reduced-motion mode. */
+.animate-spin {
+  display: inline-block;
+  transform-origin: center;
+  animation: loading-spin 0.8s linear infinite !important;
+  will-change: transform;
 }
 
 /* Pulse and ping use opacity — promote separately */
@@ -478,14 +485,13 @@ img {
   padding-bottom: env(safe-area-inset-bottom, 16px) !important;
 }
 
-/* Reduce motion for users who prefer it — eliminates marquee/ping entirely */
+/* Reduce motion for nonessential ambient effects while keeping loading status visible. */
 @media (prefers-reduced-motion: reduce) {
   .animate-marquee,
   .animate-marquee-bounce,
   .animate-ping,
   .animate-pulse,
-  .animate-bounce,
-  .animate-spin {
+  .animate-bounce {
     animation: none !important;
   }
 
@@ -2450,13 +2456,9 @@ html:not(.light) .sponsor-form-panel {
 
 .payment-submit-spinner {
   border-right-color: transparent;
-  animation: payment-submit-spin 720ms linear infinite;
+  animation: loading-spin 0.8s linear infinite !important;
   transform: rotate(0deg);
   will-change: transform;
-}
-
-@keyframes payment-submit-spin {
-  to { transform: rotate(360deg); }
 }
 
 .md-payment-success {
@@ -2522,9 +2524,6 @@ html:not(.light) .sponsor-form-panel {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .payment-submit-spinner {
-    animation-duration: 1600ms;
-  }
   .md-payment-success__circle,
   .md-payment-success__check,
   .md-payment-success__pulse {

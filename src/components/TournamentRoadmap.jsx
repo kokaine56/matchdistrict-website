@@ -365,7 +365,7 @@ function IdPassSection({ item, isGoldTheme, isOwner, onSaveCredentials }) {
                 </>
               ) : (
                 <>
-                  <p className="text-[13px] font-semibold leading-snug mt-0.5">Room ID &amp; Password</p>
+                  <p className="text-[13px] font-semibold leading-snug mt-0.5">Room ID & Password</p>
                   <p className={`text-[10px] ${C.sub} leading-snug mt-0.5`}>Copy the credentials below to join the lobby</p>
                 </>
               )}

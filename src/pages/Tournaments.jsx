@@ -331,7 +331,7 @@ function Tournaments({ onNavigate }) {
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-headline-md text-xs font-bold text-white uppercase tracking-widest flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-secondary text-sm">local_fire_department</span>
-                Trending &amp; Featured Events
+                Trending & Featured Events
               </h3>
               {isAdmin && (
                 <span className="text-[9px] font-bold uppercase tracking-widest text-amber-400/80 flex items-center gap-1">

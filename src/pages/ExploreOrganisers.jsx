@@ -225,7 +225,7 @@ export default function ExploreOrganisers({ onNavigate }) {
             </h1>
           </div>
           <p className="text-on-surface-variant text-xs sm:text-sm max-w-xl leading-relaxed mt-1.5 opacity-70">
-            Ranked by rating, followers &amp; dispute-free hosting record.
+            Ranked by rating, followers & dispute-free hosting record.
           </p>
         </div>
 

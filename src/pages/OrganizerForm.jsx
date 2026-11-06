@@ -953,7 +953,7 @@ function OrganizerForm({ onNavigate }) {
         <div className="glass-card p-5 rounded-2xl border border-outline-variant/20 bg-surface-container-low/10 space-y-4">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-base">gavel</span>
-            <h3 className="font-headline-md text-xs font-bold text-white uppercase tracking-wider">Agreements &amp; Policies</h3>
+            <h3 className="font-headline-md text-xs font-bold text-white uppercase tracking-wider">Agreements & Policies</h3>
           </div>
           <p className="text-xs text-on-surface-variant leading-relaxed">
             Please review and accept all required policies to proceed with your organizer application.
@@ -1006,8 +1006,8 @@ function OrganizerForm({ onNavigate }) {
             <p><strong className="text-white">Anti-Cheating Rules:</strong> I agree to enforce anti-cheating measures and report any suspicious activity to Match District.</p>
             <p><strong className="text-white">Refund Policy:</strong> I acknowledge and agree to the platform refund and cancellation policies.</p>
             <p><strong className="text-white">Prize Distribution Policy:</strong> I agree to distribute prizes fairly and in accordance with the tournament rules.</p>
-            <p><strong className="text-white">Terms &amp; Conditions:</strong> I have read and agree to the Match District{' '}
-              <button type="button" onClick={() => onNavigate && onNavigate('terms-service')} className="text-primary hover:underline font-semibold inline">Terms &amp; Conditions</button>
+            <p><strong className="text-white">Terms & Conditions:</strong> I have read and agree to the Match District{' '}
+              <button type="button" onClick={() => onNavigate && onNavigate('terms-service')} className="text-primary hover:underline font-semibold inline">Terms & Conditions</button>
               {' and '}
               <button type="button" onClick={() => onNavigate && onNavigate('privacy-policy')} className="text-primary hover:underline font-semibold inline">Privacy Policy</button>.
             </p>
@@ -1179,7 +1179,7 @@ function OrganizerForm({ onNavigate }) {
           <div className="absolute -left-[21px] top-1 w-[10px] h-[10px] rounded-full bg-surface-container-high border-2 border-outline-variant/30"></div>
           <div className="p-3 rounded-xl bg-surface-container border border-outline-variant/30">
             <p className="text-xs text-on-surface-variant font-bold">Verification</p>
-            <p className="text-[10px] text-on-surface-variant/50 mt-0.5">Identity &amp; document verification</p>
+            <p className="text-[10px] text-on-surface-variant/50 mt-0.5">Identity & document verification</p>
           </div>
         </div>
 

@@ -370,7 +370,7 @@ export default function RoadmapDaysDistricts({
           <div className="flex items-center gap-2.5">
             <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
             <span className="text-xs font-bold text-amber-900 dark:text-amber-200">
-              Grand Finals &bull; Add 1 to 4 or more days. All Grand Finals districts attach to every day automatically.
+              Grand Finals • Add 1 to 4 or more days. All Grand Finals districts attach to every day automatically.
             </span>
           </div>
           <span className="px-2.5 py-1 rounded-lg text-xs font-black bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 shrink-0">

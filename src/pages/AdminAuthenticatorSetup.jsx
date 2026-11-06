@@ -397,15 +397,15 @@ export default function AdminAuthenticatorSetup() {
               </div>
               <ul className="space-y-1 sm:space-y-1.5 text-xs sm:text-sm text-[#0369A1] leading-relaxed">
                 <li className="flex items-start gap-2">
-                  <span className="text-[#0EA5E9] mt-0.5 text-[10px] sm:text-xs">&#8226;</span>
+                  <span className="text-[#0EA5E9] mt-0.5 text-[10px] sm:text-xs">•</span>
                   Never share your authentication code with anyone.
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-[#0EA5E9] mt-0.5 text-[10px] sm:text-xs">&#8226;</span>
+                  <span className="text-[#0EA5E9] mt-0.5 text-[10px] sm:text-xs">•</span>
                   Keep a backup of your recovery codes in a safe place.
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-[#0EA5E9] mt-0.5 text-[10px] sm:text-xs">&#8226;</span>
+                  <span className="text-[#0EA5E9] mt-0.5 text-[10px] sm:text-xs">•</span>
                   Only disable 2FA if you have access to another secure device.
                 </li>
               </ul>

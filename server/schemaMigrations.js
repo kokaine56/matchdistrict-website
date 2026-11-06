@@ -1631,6 +1631,72 @@ export async function runSchemaMigrations(clientOrPool) {
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
 
+      -- Public profile IDs follow users.id (VARCHAR), including USR-* IDs.
+      -- Older Supabase-created profiles tables may still have UUID IDs.
+      DO $$
+      DECLARE
+        profile_id_type TEXT;
+        policies JSONB;
+        policy JSONB;
+        fk RECORD;
+        roles_sql TEXT;
+        using_sql TEXT;
+        check_sql TEXT;
+      BEGIN
+        SELECT data_type INTO profile_id_type
+          FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'id';
+
+        IF profile_id_type = 'uuid' THEN
+          SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'name', policyname, 'permissive', permissive, 'roles', roles,
+            'cmd', cmd, 'qual', qual, 'with_check', with_check
+          )), '[]'::jsonb)
+          INTO policies FROM pg_policies WHERE schemaname = 'public' AND tablename = 'profiles';
+
+          FOR policy IN SELECT value FROM jsonb_array_elements(policies) AS p(value) LOOP
+            EXECUTE format('DROP POLICY %I ON public.profiles', policy->>'name');
+          END LOOP;
+
+          FOR fk IN
+            SELECT c.conname FROM pg_constraint c
+            JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+            WHERE c.conrelid = 'public.profiles'::regclass AND c.contype = 'f'
+              AND c.confrelid = 'auth.users'::regclass AND a.attname = 'id'
+          LOOP
+            EXECUTE format('ALTER TABLE public.profiles DROP CONSTRAINT %I', fk.conname);
+          END LOOP;
+
+          ALTER TABLE public.profiles ALTER COLUMN id DROP DEFAULT;
+          ALTER TABLE public.profiles ALTER COLUMN id TYPE VARCHAR(50) USING id::text;
+
+          FOR policy IN SELECT value FROM jsonb_array_elements(policies) AS p(value) LOOP
+            SELECT string_agg(
+              CASE WHEN lower(role_name) = 'public' THEN 'PUBLIC' ELSE quote_ident(role_name) END,
+              ', '
+            ) INTO roles_sql
+            FROM jsonb_array_elements_text(policy->'roles') AS r(role_name);
+            using_sql := policy->>'qual';
+            check_sql := policy->>'with_check';
+            IF using_sql IS NOT NULL THEN
+              using_sql := regexp_replace(using_sql, 'auth\.uid\(\)([[:space:]]*=[[:space:]]*(profiles\.)?id)', '(auth.uid())::text\1', 'g');
+              using_sql := regexp_replace(using_sql, '((profiles\.)?id[[:space:]]*=[[:space:]]*)auth\.uid\(\)', '\1(auth.uid())::text', 'g');
+            END IF;
+            IF check_sql IS NOT NULL THEN
+              check_sql := regexp_replace(check_sql, 'auth\.uid\(\)([[:space:]]*=[[:space:]]*(profiles\.)?id)', '(auth.uid())::text\1', 'g');
+              check_sql := regexp_replace(check_sql, '((profiles\.)?id[[:space:]]*=[[:space:]]*)auth\.uid\(\)', '\1(auth.uid())::text', 'g');
+            END IF;
+
+            EXECUTE format(
+              'CREATE POLICY %I ON public.profiles AS %s FOR %s TO %s%s%s',
+              policy->>'name', policy->>'permissive', policy->>'cmd', COALESCE(roles_sql, 'PUBLIC'),
+              CASE WHEN using_sql IS NULL THEN '' ELSE format(' USING (%s)', using_sql) END,
+              CASE WHEN check_sql IS NULL THEN '' ELSE format(' WITH CHECK (%s)', check_sql) END
+            );
+          END LOOP;
+        END IF;
+      END $$;
+
       ALTER TABLE profiles ADD COLUMN IF NOT EXISTS username VARCHAR(32);
 
       -- 8b. Leaderboard & Qualification Additive Tables (Idempotent)

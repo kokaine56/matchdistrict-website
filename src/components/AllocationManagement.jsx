@@ -316,7 +316,7 @@ export default function AllocationManagement({ tournamentId, isGoldTheme }) {
                       <td className="px-4 py-3">
                         {team.status === 'allocated' && team.match_id ? (
                           <div className="text-xs font-medium text-gray-300">
-                            Group {team.group_name} &rarr; Match {team.match_number} &rarr; BGMI Room {team.room_number} (Day {team.day_number})
+                            Group {team.group_name} → Match {team.match_number} → BGMI Room {team.room_number} (Day {team.day_number})
                           </div>
                         ) : (
                           <span className="text-xs text-gray-600">—</span>
@@ -367,7 +367,7 @@ export default function AllocationManagement({ tournamentId, isGoldTheme }) {
                       </td>
                       <td className="px-4 py-3">
                         <div className="text-xs font-medium text-gray-300">Day {match.day_number} ({match.date})</div>
-                        <div className="text-xs text-gray-500">{match.start_time} - {match.end_time} &bull; {match.group_name}</div>
+                        <div className="text-xs text-gray-500">{match.start_time} - {match.end_time} • {match.group_name}</div>
                       </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded text-xs font-bold ${
@@ -582,7 +582,7 @@ export default function AllocationManagement({ tournamentId, isGoldTheme }) {
             </div>
             
             <p className="text-sm text-gray-400 mb-6">
-              Match {selectedMatch.match_number} &bull; Room {selectedMatch.room_number} &bull; Day {selectedMatch.day_number}
+              Match {selectedMatch.match_number} • Room {selectedMatch.room_number} • Day {selectedMatch.day_number}
             </p>
             
             {error && <div className="mb-4 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg text-sm font-medium">{error}</div>}

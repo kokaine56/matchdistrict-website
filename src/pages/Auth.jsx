@@ -1169,13 +1169,13 @@ function Auth({ onNavigate, initialMode = 'login' }) {
 
   const handleOtpVerification = async (enteredOtp) => {
     if (Date.now() > otpExpiry) {
-      triggerToast('OTP code has expired. Please request a new one.')
+      setOtpError('Your verification code expired. Please request a new one.')
       return
     }
 
     setLoadingMessage('Please wait while your account is being created...')
     setIsLoading(true)
-    
+    let redirecting = false
     try {
       const verifyRes = await fetch('/api/auth/verify-otp', {
         method: 'POST',
@@ -1185,7 +1185,6 @@ function Auth({ onNavigate, initialMode = 'login' }) {
       const verifyData = await verifyRes.json()
 
       if (!verifyRes.ok || !verifyData.success) {
-        setIsLoading(false)
         setOtpError(verifyData.message || (verifyData.error === 'OTP_NOT_FOUND' ? 'No active verification code found. Please request a new code.' : verifyData.error === 'OTP_EXPIRED' ? 'Your verification code expired. Please request a new one.' : verifyData.error === 'TOO_MANY_ATTEMPTS' ? 'Too many incorrect attempts. Please request a new code.' : verifyData.error === 'INVALID_OTP' ? 'That code is incorrect. Check it and try again.' : 'Could not verify that code. Please try again.'))
         return
       }
@@ -1221,6 +1220,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
           setCurrentUser(data.user)
         }
 
+        redirecting = true
         setTimeout(() => {
           setIsLoading(false)
           const dest = getSafeRedirect(redirectTo)
@@ -1231,12 +1231,12 @@ function Auth({ onNavigate, initialMode = 'login' }) {
           }
         }, 2000)
       } else {
-        setIsLoading(false)
-        triggerToast(data.error || data.message || 'Failed to complete registration.')
+        setOtpError(data.message || data.error || 'Registration could not be completed. Please try again.')
       }
     } catch (err) {
-      setIsLoading(false)
       setOtpError(err.message || 'Verification failed. Check your connection.')
+    } finally {
+      if (!redirecting) setIsLoading(false)
     }
   }
 
@@ -2428,7 +2428,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
             <button onClick={() => onNavigate && onNavigate('home')} className="font-headline-md text-[16px] font-extrabold text-primary tracking-tight hover:opacity-85 transition-opacity">
               Match District
             </button>
-            <p className="font-body-sm text-[10px] text-on-surface-variant opacity-60">&copy; 2024 MATCH DISTRICT. ALL RIGHTS RESERVED.</p>
+            <p className="font-body-sm text-[10px] text-on-surface-variant opacity-60">© 2024 MATCH DISTRICT. ALL RIGHTS RESERVED.</p>
           </div>
         </div>
       </footer>

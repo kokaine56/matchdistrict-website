@@ -270,7 +270,7 @@ function WalletPassCard({
               <div className="space-y-0.5">
                 <span className={`text-[6px] font-bold ${cc.formatLabel} uppercase tracking-widest block leading-none`}>FORMAT</span>
                 <span className={`text-[8px] font-bold ${cc.formatValue} block leading-none truncate`}>
-                  {matchLabel} &bull; {perspLabel}
+                  {matchLabel} • {perspLabel}
                 </span>
               </div>
               <div className="space-y-0.5">

@@ -1619,7 +1619,7 @@ function RegistrationPage({ onNavigate }) {
                     <span>Processing...</span>
                   </>
                 ) : (
-                  <span>Confirm &amp; Submit</span>
+                  <span>Confirm & Submit</span>
                 )}
               </button>
             </>
@@ -1786,7 +1786,7 @@ function RegistrationPage({ onNavigate }) {
                 </div>
               ) : savedPresets.length === 0 ? (
                 <p className="text-xs text-white/50">
-                  No saved squads yet. <Link to="/profile?tab=teams" className="text-primary underline underline-offset-2">Create one in Teams &amp; Squads</Link>.
+                  No saved squads yet. <Link to="/profile?tab=teams" className="text-primary underline underline-offset-2">Create one in Teams & Squads</Link>.
                 </p>
               ) : (
                 <>

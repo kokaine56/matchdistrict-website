@@ -305,7 +305,7 @@ export default function Step5Media({ data, onChange, orgName, orgTier, userTier 
 
       <div className="space-y-3">
         <h3 className="text-sm font-semibold text-on-background">Card Preview</h3>
-        <p className="text-[10px] text-on-surface-variant">This is how your tournament will appear on the homepage &amp; discover page.</p>
+        <p className="text-[10px] text-on-surface-variant">This is how your tournament will appear on the homepage & discover page.</p>
         <div className="flex justify-center overflow-hidden sm:overflow-visible">
           <div className="origin-center scale-[0.78] sm:scale-100 -my-6 sm:my-0">
           {isImgUploading ? (

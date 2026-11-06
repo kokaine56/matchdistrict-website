@@ -4963,11 +4963,17 @@ const server = http.createServer(async (req, res) => {
       });
       req.on('end', async () => {
         if (bodySize > MAX_AUTH_BODY) return;
+        const errorRef = makeErrorRef();
+        let registrationStep = 'parse_request';
+        let userUUID = null;
+        let createdSupabaseAuthUser = false;
+        let accountTransactionCommitted = false;
         try {
           const { email: rawEmail, password, verificationToken } = JSON.parse(body);
           const email = (rawEmail || '').trim().toLowerCase();
 
           // Cleanup expired temp users
+          registrationStep = 'load_temporary_registration';
           await pool.query('DELETE FROM temp_users WHERE expires_at < NOW()');
 
           // Fetch temporary user details
@@ -4992,6 +4998,7 @@ const server = http.createServer(async (req, res) => {
           }
 
           // Verify verificationToken matches if token was issued
+          registrationStep = 'verify_registration_token';
           if (tempUser.verification_token && verificationToken) {
             if (typeof verificationToken !== 'string' || !/^[a-f0-9]{64}$/i.test(verificationToken)) {
               res.writeHead(403, { 'Content-Type': 'application/json' });
@@ -5024,11 +5031,29 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
+          registrationStep = 'check_existing_account';
+          const existingAccount = await pool.query(
+            `SELECT 1 FROM users WHERE LOWER(BTRIM(email)) = $1
+             UNION ALL
+             SELECT 1 FROM profiles WHERE LOWER(BTRIM(email)) = $1
+             LIMIT 1`,
+            [email]
+          );
+          if (existingAccount.rows.length > 0) {
+            res.writeHead(409, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              success: false,
+              error: 'EMAIL_ALREADY_REGISTERED',
+              message: 'An account with this email already exists. Sign in or use a different email.'
+            }));
+            return;
+          }
+
           // Register user in Supabase Auth
-          let userUUID = null;
           let isLocalFallback = false;
           const registerPassword = password || ('MatchDistrictTempPass' + crypto.randomBytes(6).toString('hex'));
 
+          registrationStep = 'create_supabase_auth_user';
           try {
             const { data: authData, error: authError } = await supabase.auth.signUp({
               email: tempUser.email,
@@ -5036,20 +5061,24 @@ const server = http.createServer(async (req, res) => {
             });
 
             if (authError || !authData || !authData.user) {
+              if (authError) console.warn(`[AUTH REGISTER] Supabase Auth signup returned an error [Ref:${errorRef}]:`, authError);
               isLocalFallback = true;
             } else {
               userUUID = authData.user.id;
+              createdSupabaseAuthUser = true;
             }
           } catch (signUpErr) {
+            console.warn(`[AUTH REGISTER] Supabase Auth signup unavailable; using the configured local account fallback [Ref:${errorRef}].`, signUpErr);
             isLocalFallback = true;
           }
 
           if (isLocalFallback) {
             // Check if already in users table
+            registrationStep = 'check_existing_public_account';
             const checkUser = await pool.query('SELECT * FROM users WHERE email = $1', [tempUser.email]);
             if (checkUser.rows.length > 0) {
               res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ success: false, error: 'Email is already registered.' }));
+              res.end(JSON.stringify({ success: false, error: 'EMAIL_ALREADY_REGISTERED', message: 'An account with this email already exists. Sign in or use a different email.' }));
               return;
             }
             userUUID = 'USR-' + crypto.randomBytes(12).toString('hex');
@@ -5063,7 +5092,9 @@ const server = http.createServer(async (req, res) => {
           let newUser = null;
           const registrationClient = await pool.connect();
           try {
+            registrationStep = 'begin_account_transaction';
             await registrationClient.query('BEGIN');
+            registrationStep = 'insert_public_user';
             newUser = await insertWithDistrictId((districtId) => registrationClient.query(
               `INSERT INTO users (id, uid, name, email, password, "gamerTag", role, roles, tier, "orgApplicationStatus", avatar, status, district_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -5073,7 +5104,9 @@ const server = http.createServer(async (req, res) => {
                 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=500&q=80',
                 defaultStatus, districtId]
             ));
+            registrationStep = 'insert_profile';
             await ensureSupabaseProfile(registrationClient, newUser);
+            registrationStep = 'verify_profile';
             const profileCheck = await registrationClient.query(
               'SELECT 1 FROM profiles WHERE id = $1 AND email = $2',
               [newUser.uid || newUser.id, newUser.email]
@@ -5083,8 +5116,12 @@ const server = http.createServer(async (req, res) => {
             }
 
             // Delete from temp_users (single-use: registration completed)
-            await registrationClient.query('DELETE FROM temp_users WHERE email = $1', [tempUser.email]);
+            registrationStep = 'consume_temporary_registration';
+            const consumed = await registrationClient.query('DELETE FROM temp_users WHERE LOWER(BTRIM(email)) = $1', [email]);
+            if (consumed.rowCount !== 1) throw new Error('The temporary registration expired before account creation completed.');
+            registrationStep = 'commit_account_transaction';
             await registrationClient.query('COMMIT');
+            accountTransactionCommitted = true;
             console.log(`\r\n📦 [MATCH DISTRICT DB] User "${newUser.email}" registered permanently.\r\n`);
 
             // Log final terms acceptance
@@ -5092,9 +5129,23 @@ const server = http.createServer(async (req, res) => {
           } catch (dbErr) {
             await registrationClient.query('ROLLBACK').catch(() => { });
             const duplicateEmail = dbErr.code === '23505' && /email/i.test(dbErr.constraint || '');
-            console.error(`[AUTH REGISTER] Account/profile transaction failed [code: ${dbErr.code || 'UNKNOWN'}].`);
+            logErrorWithRef(errorRef, 'POST /api/auth/register', dbErr, registrationStep);
+            console.error(`[AUTH REGISTER] Account creation transaction failed [Ref:${errorRef}] step="${registrationStep}":`, dbErr);
+            if (createdSupabaseAuthUser && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userUUID || '')) {
+              try {
+                await pool.query('DELETE FROM auth.users WHERE id = $1::uuid', [userUUID]);
+              } catch (cleanupErr) {
+                console.error(`[AUTH REGISTER] Could not roll back Supabase Auth account [Ref:${errorRef}]:`, cleanupErr);
+              }
+            }
             res.writeHead(duplicateEmail ? 409 : 500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: duplicateEmail ? 'Email is already registered.' : 'Account registration could not be completed. Please try again.' }));
+            res.end(JSON.stringify({
+              success: false,
+              error: duplicateEmail ? 'EMAIL_ALREADY_REGISTERED' : 'SERVER_ERROR',
+              message: duplicateEmail
+                ? 'An account with this email already exists. Sign in or use a different email.'
+                : 'Registration could not be completed because of a server error. Please try again.'
+            }));
             return;
           } finally {
             registrationClient.release();
@@ -5114,8 +5165,17 @@ const server = http.createServer(async (req, res) => {
           });
           res.end(JSON.stringify({ success: true, token, user: safeUser }));
         } catch (err) {
+          logErrorWithRef(errorRef, 'POST /api/auth/register', err, registrationStep);
+          console.error(`[AUTH REGISTER] Registration request failed [Ref:${errorRef}] step="${registrationStep}":`, err);
+          if (!accountTransactionCommitted && createdSupabaseAuthUser && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userUUID || '')) {
+            try {
+              await pool.query('DELETE FROM auth.users WHERE id = $1::uuid', [userUUID]);
+            } catch (cleanupErr) {
+              console.error(`[AUTH REGISTER] Could not roll back Supabase Auth account [Ref:${errorRef}]:`, cleanupErr);
+            }
+          }
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, error: err.message }));
+          res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: 'Registration could not be completed because of a server error. Please try again.' }));
         }
       });
       return;

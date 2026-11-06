@@ -55,7 +55,7 @@ export const OrganizerOnboarding = () => {
           <div className="p-6 sm:p-8 text-center bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
             <Users className="w-8 h-8 sm:w-10 sm:h-10 mx-auto mb-4 sm:mb-5 text-emerald-600" />
             <h3 className="text-lg sm:text-xl font-bold text-slate-900">Grow Community</h3>
-            <p className="mt-2 sm:mt-3 text-sm sm:text-base text-slate-500">Attract competitive players and build your organization&apos;s loyal brand following.</p>
+            <p className="mt-2 sm:mt-3 text-sm sm:text-base text-slate-500">Attract competitive players and build your organization's loyal brand following.</p>
           </div>
           <div className="p-6 sm:p-8 text-center bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
             <Zap className="w-8 h-8 sm:w-10 sm:h-10 mx-auto mb-4 sm:mb-5 text-amber-600" />
@@ -86,7 +86,7 @@ export const OrganizerOnboarding = () => {
 
           <div className="flex flex-col items-center w-full md:w-64 text-center">
             <div className="flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 mb-4 sm:mb-5 text-lg sm:text-xl font-bold text-indigo-600 bg-indigo-50 border-4 border-white rounded-full shadow-sm z-10">02</div>
-            <h3 className="text-base sm:text-lg font-bold text-slate-900">Review &amp; Verify</h3>
+            <h3 className="text-base sm:text-lg font-bold text-slate-900">Review & Verify</h3>
             <p className="mt-1 sm:mt-2 text-xs sm:text-sm text-slate-500">Admins verify your documents and KYC status within 24 hours.</p>
           </div>
 

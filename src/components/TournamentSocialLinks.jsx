@@ -352,7 +352,7 @@ export function SocialLinksModal({ isOpen, onClose, tournament, onSaved }) {
               </p>
             ) : (
               <p className="mt-1 text-[11px] text-slate-400">
-                Powers both the Discord icon button and the &quot;Join Discord&quot; button in the overview.
+                Powers both the Discord icon button and the "Join Discord" button in the overview.
               </p>
             )}
           </div>

@@ -156,7 +156,7 @@ function TermsService({ onNavigate }) {
                   <span className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-base">verified_user</span>
                   </span>
-                  1. User Obligations &amp; Account Security
+                  1. User Obligations & Account Security
                 </h2>
 
                 <div className="space-y-5">
@@ -218,7 +218,7 @@ function TermsService({ onNavigate }) {
                   <span className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-base">sports_esports</span>
                   </span>
-                  2. Competitive Rules &amp; Fair Play
+                  2. Competitive Rules & Fair Play
                 </h2>
 
                 <div className="space-y-5">
@@ -263,7 +263,7 @@ function TermsService({ onNavigate }) {
                   <span className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-base">gavel</span>
                   </span>
-                  3. Tournament Rules &amp; Dispute Resolution
+                  3. Tournament Rules & Dispute Resolution
                 </h2>
 
                 <div className="space-y-5">
@@ -309,7 +309,7 @@ function TermsService({ onNavigate }) {
                   <span className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-base">account_balance</span>
                   </span>
-                  4. Financial Agreement &amp; UPI Terms
+                  4. Financial Agreement & UPI Terms
                 </h2>
 
                 <div className="space-y-5">
@@ -375,7 +375,7 @@ function TermsService({ onNavigate }) {
                   <span className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-base">undo</span>
                   </span>
-                  5. Binding Refund &amp; Cancellation Policy
+                  5. Binding Refund & Cancellation Policy
                 </h2>
 
                 <div className="space-y-5">
@@ -463,7 +463,7 @@ function TermsService({ onNavigate }) {
                   </div>
                   <div className="space-y-1.5">
                     <p className="text-sm text-slate-600 leading-relaxed">
-                      Match District provides the platform on an <strong className="text-slate-800">&ldquo;AS IS&rdquo;</strong> basis. We are not liable for external internet disruptions, game-server outages, or disputes strictly between users and third-party game publishers.
+                      Match District provides the platform on an <strong className="text-slate-800">“AS IS”</strong> basis. We are not liable for external internet disruptions, game-server outages, or disputes strictly between users and third-party game publishers.
                     </p>
                   </div>
                 </div>
@@ -522,7 +522,7 @@ function TermsService({ onNavigate }) {
                   <span className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-base">update</span>
                   </span>
-                  7. Modifications to Terms &amp; Policies
+                  7. Modifications to Terms & Policies
                 </h2>
 
                 <div className="space-y-5">
@@ -611,7 +611,7 @@ function TermsService({ onNavigate }) {
             <button onClick={() => onNavigate && onNavigate('home')} className="text-base font-extrabold text-blue-600 tracking-tight hover:opacity-80 transition-opacity">
               Match District
             </button>
-            <p className="text-xs text-slate-400">&copy; {new Date().getFullYear()} MATCH DISTRICT. ALL RIGHTS RESERVED.</p>
+            <p className="text-xs text-slate-400">© {new Date().getFullYear()} MATCH DISTRICT. ALL RIGHTS RESERVED.</p>
           </div>
         </div>
       </footer>

@@ -63,7 +63,7 @@ export default function TournamentCardPreview({ data }) {
           </div>
         </div>
       </motion.div>
-      <p className="text-[10px] text-on-surface-variant">This is how your tournament will appear on the homepage &amp; discover page.</p>
+      <p className="text-[10px] text-on-surface-variant">This is how your tournament will appear on the homepage & discover page.</p>
     </div>
   )
 }

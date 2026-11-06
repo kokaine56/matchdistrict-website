@@ -790,7 +790,7 @@ export default function CreateTournament({ onNavigate, template }) {
               <span className="xs:hidden">Creator</span>
             </h1>
             <p className="text-[9px] font-bold uppercase tracking-widest mt-0.5 truncate text-slate-500 dark:text-white/40">
-              {isEditingExisting ? 'Editing Draft' : 'Host Event'} &bull; Step {createStep} of 9
+              {isEditingExisting ? 'Editing Draft' : 'Host Event'} • Step {createStep} of 9
             </p>
           </div>
         </div>
@@ -1086,7 +1086,7 @@ export default function CreateTournament({ onNavigate, template }) {
                           <div className="space-y-2 pb-3 border-b border-slate-200 dark:border-white/10 mb-4">
                             <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
                               <span className="text-slate-600 dark:text-white/50">Player Payout Percentage</span>
-                              <span className="text-indigo-600 dark:text-indigo-400">{payoutPercent}% &rarr; Org keeps {100 - payoutPercent}%</span>
+                              <span className="text-indigo-600 dark:text-indigo-400">{payoutPercent}% → Org keeps {100 - payoutPercent}%</span>
                             </div>
                             <input type="range" min="50" max="100" step="5" value={payoutPercent} onChange={(e) => setPayoutPercent(parseInt(e.target.value))} className="w-full h-1.5 cursor-pointer rounded-full accent-indigo-500" />
                           </div>
@@ -1496,7 +1496,7 @@ export default function CreateTournament({ onNavigate, template }) {
                         <div className="grid grid-cols-2 gap-4 text-xs">
                           <div>
                             <p className="text-[10px] text-slate-400 dark:text-white/40">Format & Server</p>
-                            <p className="font-bold text-slate-900 dark:text-white mt-0.5">{newTourney.format} &bull; {newTourney.region}</p>
+                            <p className="font-bold text-slate-900 dark:text-white mt-0.5">{newTourney.format} • {newTourney.region}</p>
                           </div>
                           <div>
                             <p className="text-[10px] text-slate-400 dark:text-white/40">Compliance Check</p>

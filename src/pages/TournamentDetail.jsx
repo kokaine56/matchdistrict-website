@@ -1335,7 +1335,7 @@ function TournamentDetail({ onNavigate, tournamentId }) {
                     <div className="flex flex-col items-start gap-0.5">
                       <span className={`text-[10px] font-bold uppercase tracking-widest ${isGoldTheme ? 'text-[#FFFFFF]/85' : 'text-slate-600'}`}>FORMAT</span>
                       <span className={`text-xs sm:text-sm font-bold flex items-center gap-1 ${isGoldTheme ? 'text-[#FFFFFF]' : 'text-slate-900'}`}>
-                        {formatLabel(tourney.match_type)} &bull; {(tourney.perspective || 'TPP').toUpperCase()}
+                        {formatLabel(tourney.match_type)} • {(tourney.perspective || 'TPP').toUpperCase()}
                       </span>
                     </div>
                     {/* Slots */}

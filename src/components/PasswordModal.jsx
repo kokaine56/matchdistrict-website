@@ -179,7 +179,7 @@ export default function PasswordModal({
 
         {!passwordSet ? (
           <p className="text-xs text-on-surface-variant leading-relaxed">
-            Create a password to enable email &amp; password sign-in for your account.
+            Create a password to enable email & password sign-in for your account.
           </p>
         ) : (
           <div className="space-y-1.5">

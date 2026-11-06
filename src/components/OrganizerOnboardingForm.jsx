@@ -39,8 +39,8 @@ export const OrganizerOnboardingForm = () => {
           {currentStep === 2 && <div className="text-slate-900">Step 2: KYC Documents</div>}
           {currentStep === 3 && <div className="text-slate-900">Step 3: Branding</div>}
           {currentStep === 4 && <div className="text-slate-900">Step 4: Operations</div>}
-          {currentStep === 5 && <div className="text-slate-900">Step 5: Trust &amp; Safety</div>}
-          {currentStep === 6 && <div className="text-slate-900">Step 6: Review &amp; Submit</div>}
+          {currentStep === 5 && <div className="text-slate-900">Step 5: Trust & Safety</div>}
+          {currentStep === 6 && <div className="text-slate-900">Step 6: Review & Submit</div>}
         </div>
 
         <div className="mt-8 pt-6 border-t border-slate-100 flex justify-end">

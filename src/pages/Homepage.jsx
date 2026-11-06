@@ -464,7 +464,7 @@ function Homepage({ onNavigate }) {
               </div>
               <div className="space-y-1">
                 <h4 className="font-headline-md text-sm lg:text-base text-white font-bold tracking-tight">FAIR PLAY</h4>
-                <p className="font-body-sm text-xs text-on-surface-variant/80 leading-relaxed">Advanced anti-cheat &amp; secure tournament system.</p>
+                <p className="font-body-sm text-xs text-on-surface-variant/80 leading-relaxed">Advanced anti-cheat & secure tournament system.</p>
               </div>
             </div>
             <div className="flex items-start gap-3 lg:gap-4 glass-card p-5 lg:p-6 rounded-2xl bg-surface-container-low/20 backdrop-blur-sm shadow-sm">
@@ -473,7 +473,7 @@ function Homepage({ onNavigate }) {
               </div>
               <div className="space-y-1">
                 <h4 className="font-headline-md text-sm lg:text-base text-white font-bold tracking-tight">EASY TO USE</h4>
-                <p className="font-body-sm text-xs text-on-surface-variant/80 leading-relaxed">Simple registration &amp; smooth platform experience.</p>
+                <p className="font-body-sm text-xs text-on-surface-variant/80 leading-relaxed">Simple registration & smooth platform experience.</p>
               </div>
             </div>
             <div className="flex items-start gap-3 lg:gap-4 glass-card p-5 lg:p-6 rounded-2xl bg-surface-container-low/20 backdrop-blur-sm shadow-sm">
@@ -482,7 +482,7 @@ function Homepage({ onNavigate }) {
               </div>
               <div className="space-y-1">
                 <h4 className="font-headline-md text-sm lg:text-base text-white font-bold tracking-tight">REAL REWARDS</h4>
-                <p className="font-body-sm text-xs text-on-surface-variant/80 leading-relaxed">Huge prize pools &amp; exciting rewards for winners.</p>
+                <p className="font-body-sm text-xs text-on-surface-variant/80 leading-relaxed">Huge prize pools & exciting rewards for winners.</p>
               </div>
             </div>
             <div className="flex items-start gap-3 lg:gap-4 glass-card p-5 lg:p-6 rounded-2xl bg-surface-container-low/20 backdrop-blur-sm shadow-sm">
@@ -491,7 +491,7 @@ function Homepage({ onNavigate }) {
               </div>
               <div className="space-y-1">
                 <h4 className="font-headline-md text-sm lg:text-base text-white font-bold tracking-tight">TRUSTED</h4>
-                <p className="font-body-sm text-xs text-on-surface-variant/80 leading-relaxed">Verified organizers &amp; transparent match reporting.</p>
+                <p className="font-body-sm text-xs text-on-surface-variant/80 leading-relaxed">Verified organizers & transparent match reporting.</p>
               </div>
             </div>
           </div>
@@ -507,7 +507,7 @@ function Homepage({ onNavigate }) {
                   </div>
                   <div className="space-y-0.5">
                     <h4 className="font-headline-md text-xs sm:text-sm text-white font-bold tracking-tight">FAIR PLAY</h4>
-                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Advanced anti-cheat &amp; secure tournament system.</p>
+                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Advanced anti-cheat & secure tournament system.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2.5 glass-card p-3 sm:p-3.5 rounded-xl sm:rounded-2xl min-w-[240px] sm:min-w-[260px] shadow-md bg-surface-container-low/40 backdrop-blur-md">
@@ -516,7 +516,7 @@ function Homepage({ onNavigate }) {
                   </div>
                   <div className="space-y-0.5">
                     <h4 className="font-headline-md text-xs sm:text-sm text-white font-bold tracking-tight">EASY TO USE</h4>
-                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Simple registration &amp; smooth platform experience.</p>
+                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Simple registration & smooth platform experience.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2.5 glass-card p-3 sm:p-3.5 rounded-xl sm:rounded-2xl min-w-[240px] sm:min-w-[260px] shadow-md bg-surface-container-low/40 backdrop-blur-md">
@@ -525,7 +525,7 @@ function Homepage({ onNavigate }) {
                   </div>
                   <div className="space-y-0.5">
                     <h4 className="font-headline-md text-xs sm:text-sm text-white font-bold tracking-tight">REAL REWARDS</h4>
-                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Huge prize pools &amp; exciting rewards for winners.</p>
+                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Huge prize pools & exciting rewards for winners.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2.5 glass-card p-3 sm:p-3.5 rounded-xl sm:rounded-2xl min-w-[240px] sm:min-w-[260px] shadow-md bg-surface-container-low/40 backdrop-blur-md">
@@ -534,7 +534,7 @@ function Homepage({ onNavigate }) {
                   </div>
                   <div className="space-y-0.5">
                     <h4 className="font-headline-md text-xs sm:text-sm text-white font-bold tracking-tight">TRUSTED</h4>
-                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Verified organizers &amp; transparent match reporting.</p>
+                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Verified organizers & transparent match reporting.</p>
                   </div>
                 </div>
               </div>
@@ -547,7 +547,7 @@ function Homepage({ onNavigate }) {
                   </div>
                   <div className="space-y-0.5">
                     <h4 className="font-headline-md text-xs sm:text-sm text-white font-bold tracking-tight">FAIR PLAY</h4>
-                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Advanced anti-cheat &amp; secure tournament system.</p>
+                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Advanced anti-cheat & secure tournament system.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2.5 glass-card p-3 sm:p-3.5 rounded-xl sm:rounded-2xl min-w-[240px] sm:min-w-[260px] shadow-md bg-surface-container-low/40 backdrop-blur-md">
@@ -556,7 +556,7 @@ function Homepage({ onNavigate }) {
                   </div>
                   <div className="space-y-0.5">
                     <h4 className="font-headline-md text-xs sm:text-sm text-white font-bold tracking-tight">EASY TO USE</h4>
-                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Simple registration &amp; smooth platform experience.</p>
+                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Simple registration & smooth platform experience.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2.5 glass-card p-3 sm:p-3.5 rounded-xl sm:rounded-2xl min-w-[240px] sm:min-w-[260px] shadow-md bg-surface-container-low/40 backdrop-blur-md">
@@ -565,7 +565,7 @@ function Homepage({ onNavigate }) {
                   </div>
                   <div className="space-y-0.5">
                     <h4 className="font-headline-md text-xs sm:text-sm text-white font-bold tracking-tight">REAL REWARDS</h4>
-                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Huge prize pools &amp; exciting rewards for winners.</p>
+                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Huge prize pools & exciting rewards for winners.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2.5 glass-card p-3 sm:p-3.5 rounded-xl sm:rounded-2xl min-w-[240px] sm:min-w-[260px] shadow-md bg-surface-container-low/40 backdrop-blur-md">
@@ -574,7 +574,7 @@ function Homepage({ onNavigate }) {
                   </div>
                   <div className="space-y-0.5">
                     <h4 className="font-headline-md text-xs sm:text-sm text-white font-bold tracking-tight">TRUSTED</h4>
-                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Verified organizers &amp; transparent match reporting.</p>
+                    <p className="font-body-sm text-[10px] sm:text-[12px] text-on-surface-variant/80 leading-tight">Verified organizers & transparent match reporting.</p>
                   </div>
                 </div>
               </div>
@@ -601,7 +601,7 @@ function Homepage({ onNavigate }) {
             <button onClick={() => onNavigate && onNavigate('home')} className="font-headline-md text-[16px] font-extrabold text-primary tracking-tight hover:opacity-85 transition-opacity">
                Match District
             </button>
-            <p className="font-body-sm text-[10px] text-on-surface-variant opacity-60">&copy; {new Date().getFullYear()} MATCH DISTRICT. ALL RIGHTS RESERVED.</p>
+            <p className="font-body-sm text-[10px] text-on-surface-variant opacity-60">© {new Date().getFullYear()} MATCH DISTRICT. ALL RIGHTS RESERVED.</p>
           </div>
         </div>
       </footer>
