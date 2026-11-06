@@ -458,7 +458,6 @@ function RegistrationPage({ onNavigate }) {
     setForm(prev => ({
       ...prev,
       email: prev.email || currentUser.email || '',
-      captainIgn: prev.captainIgn || currentUser.name || '',
     }))
   }, [currentUser, tourney])
 
@@ -483,8 +482,8 @@ function RegistrationPage({ onNavigate }) {
         return res.json()
       })
       .then(data => {
-        if (data.success && Array.isArray(data.presets)) {
-          setSavedPresets(data.presets)
+        if (data.success && (data.presets == null || Array.isArray(data.presets))) {
+          setSavedPresets(Array.isArray(data.presets) ? data.presets : [])
           setPresetsError('')
         } else {
           throw new Error(data.message || 'Failed to load presets')
@@ -552,7 +551,7 @@ function RegistrationPage({ onNavigate }) {
       const next = {
         ...prev,
         teamName: preset.team_name || prev.teamName,
-        captainIgn: preset.captain || prev.captainIgn,
+        captainIgn: preset.captain || '',
         captainUid: preset.captain_uid || prev.captainUid,
         players: pad(playersRaw, 3),
         substitutes: pad(subsRaw, 2),
@@ -1784,11 +1783,7 @@ function RegistrationPage({ onNavigate }) {
                   <span>{toMessage(presetsError)}</span>
                   <button type="button" onClick={fetchPresets} className="underline underline-offset-2 font-semibold">Retry</button>
                 </div>
-              ) : savedPresets.length === 0 ? (
-                <p className="text-xs text-white/50">
-                  No saved squads yet. <Link to="/profile?tab=teams" className="text-primary underline underline-offset-2">Create one in Teams & Squads</Link>.
-                </p>
-              ) : (
+              ) : savedPresets.length > 0 ? (
                 <>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-primary/10 border border-primary/30 rounded-xl p-3.5">
                     <div className="flex items-center gap-2 min-w-0">
@@ -1821,7 +1816,7 @@ function RegistrationPage({ onNavigate }) {
                     </p>
                   )}
                 </>
-              )}
+              ) : null}
 
               <div>
                 <label htmlFor="reg-teamName" className="block text-xs font-semibold text-white/60 mb-1.5">Team Name *</label>
@@ -1873,7 +1868,7 @@ function RegistrationPage({ onNavigate }) {
                   aria-invalid={errors.captainIgn ? true : undefined}
                   aria-describedby={errors.captainIgn ? 'err-captainIgn' : undefined}
                   className={inputCls(Boolean(errors.captainIgn))}
-                  placeholder="In-game name"
+                  placeholder="Enter in-game name"
                 />
                 <FieldError id="err-captainIgn" message={errors.captainIgn} />
               </div>
@@ -1915,7 +1910,7 @@ function RegistrationPage({ onNavigate }) {
                     aria-invalid={errors[`player_${i}_ign`] ? true : undefined}
                     aria-describedby={errors[`player_${i}_ign`] ? `err-player_${i}_ign` : undefined}
                     className={inputCls(Boolean(errors[`player_${i}_ign`]))}
-                    placeholder="In-game name"
+                    placeholder="Enter in-game name"
                   />
                   <FieldError id={`err-player_${i}_ign`} message={errors[`player_${i}_ign`]} />
                 </div>
@@ -1956,7 +1951,7 @@ function RegistrationPage({ onNavigate }) {
                     aria-invalid={errors[`sub_${i}_ign`] ? true : undefined}
                     aria-describedby={errors[`sub_${i}_ign`] ? `err-sub_${i}_ign` : undefined}
                     className={inputCls(Boolean(errors[`sub_${i}_ign`]))}
-                    placeholder="In-game name"
+                    placeholder="Enter in-game name"
                   />
                   <FieldError id={`err-sub_${i}_ign`} message={errors[`sub_${i}_ign`]} />
                 </div>

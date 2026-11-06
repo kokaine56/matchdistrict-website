@@ -624,9 +624,7 @@ export default function TournamentTeamHub({ tournamentId, tournamentTitle, maxTe
                 members.map((member) => (
                   <div key={member.id} className="flex items-center justify-between p-3.5 hover:bg-white/5 rounded-xl transition-colors">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold">
-                        {member.name?.charAt(0).toUpperCase() || '?'}
-                      </div>
+                      <Avatar user={member} size="w-9 h-9 text-xs" className="border-indigo-500/30" />
                       <div>
                         <p className="font-bold text-white text-sm">{member.name || 'Unknown'}</p>
                         <p className="text-xs text-gray-500">Joined {new Date(member.created_at).toLocaleDateString()}</p>

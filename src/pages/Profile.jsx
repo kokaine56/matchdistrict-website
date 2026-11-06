@@ -7,7 +7,7 @@ import Header from '../components/Header.jsx'
 import OrganizerDashboard from '../components/OrganizerDashboard.jsx'
 import SafeImage from '../components/SafeImage.jsx'
 import AbuseFieldWrapper from '../components/AbuseFieldWrapper.jsx'
-import { DEFAULT_AVATAR, DEFAULT_BANNER } from '../utils/defaults.js'
+import { DEFAULT_BANNER } from '../utils/defaults.js'
 import {
   parseStoredUser,
   setStoredUser,
@@ -2395,11 +2395,13 @@ className="px-6 min-h-[44px] bg-secondary hover:bg-secondary/95 active:scale-95 
                 {/* Avatar / Logo — overlaps banner edge 50/50 */}
                 <div className="flex justify-center md:justify-start px-4 md:px-6 relative z-10 -mt-10 sm:-mt-12 lg:-mt-14">
                   <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-full p-[3px] bg-gradient-to-tr from-primary via-primary/50 to-secondary shadow-lg transition-transform duration-300 hover:scale-[1.02] shrink-0">
-                    <div className="relative w-full h-full rounded-full overflow-hidden border-2 border-surface bg-surface-variant">
-                      {viewedUser.orgImage || viewedUser.avatar
-                        ? <img src={viewedUser.orgImage || viewedUser.avatar} alt={viewedUser.orgName || viewedUser.name} className="avatar-img" />
-                        : <img src={DEFAULT_AVATAR} alt="Default Avatar" className="avatar-img" />}
-                    </div>
+                    <Avatar
+                      user={viewedUser}
+                      src={viewedUser.orgImage || viewedUser.avatar}
+                      size="w-full h-full"
+                      className="border-2 border-surface"
+                      alt={viewedUser.orgName || viewedUser.name || viewedUser.email || 'Profile avatar'}
+                    />
                   </div>
                 </div>
 

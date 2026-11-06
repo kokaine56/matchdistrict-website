@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useCurrentUser } from '../hooks/useCurrentUser.js'
 import { getAuthToken } from '../utils/getAuthToken'
-import { DEFAULT_AVATAR, DEFAULT_BANNER } from '../utils/defaults.js'
+import { DEFAULT_BANNER } from '../utils/defaults.js'
 import { uploadImage } from '../utils/imagekitUpload'
 import AdminLayout from '../components/admin/AdminLayout.jsx'
+import Avatar from '../components/Avatar.jsx'
 
 export default function AdminProfile() {
   const navigate = useNavigate()
@@ -212,15 +213,13 @@ export default function AdminProfile() {
         <div className="relative -mt-14 sm:-mt-16 px-4">
           <div className="relative inline-block">
             <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full border-4 border-background overflow-hidden bg-surface-variant/30">
-              {(avatarPreview || form.avatar) ? (
-                <img
-                  src={avatarPreview || form.avatar}
-                  alt="Avatar"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <img src={DEFAULT_AVATAR} alt="Default Avatar" className="w-full h-full object-cover" />
-              )}
+              <Avatar
+                user={{ ...currentUser, ...form }}
+                src={avatarPreview || form.avatar}
+                size="w-full h-full"
+                className="border-0"
+                alt={form.name || form.email || 'Profile avatar'}
+              />
             </div>
             <button
               onClick={() => avatarInputRef.current?.click()}

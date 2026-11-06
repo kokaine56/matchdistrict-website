@@ -1,5 +1,6 @@
 import React from 'react'
-import { Eye, Trash2, User, PauseCircle, PlayCircle, Gavel, Search } from 'lucide-react'
+import { Eye, Trash2, PauseCircle, PlayCircle, Gavel, Search } from 'lucide-react'
+import Avatar from '../Avatar.jsx'
 
 export const UserGovernance = ({
   users = [],
@@ -56,17 +57,7 @@ export const UserGovernance = ({
                   {/* Name / Avatar / District ID */}
                   <td className="px-5 py-3.5 whitespace-nowrap">
                     <div className="flex items-center gap-3">
-                      {user.avatar ? (
-                        <img
-                          src={user.avatar}
-                          alt={user.name}
-                          className="w-9 h-9 rounded-full object-cover shrink-0 border border-outline-variant/30"
-                        />
-                      ) : (
-                        <div className="w-9 h-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-primary">
-                          <User className="w-4 h-4" />
-                        </div>
-                      )}
+                      <Avatar user={user} size="w-9 h-9 text-xs" className="border-outline-variant/30" alt={user.name || user.email || 'User avatar'} />
                       <div className="flex flex-col min-w-0">
                         <span className="font-bold text-on-background truncate">
                           {user.name || 'Anonymous User'}

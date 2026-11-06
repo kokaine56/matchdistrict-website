@@ -3195,7 +3195,7 @@ const server = http.createServer(async (req, res) => {
             // New User Registration with least-privileged participant defaults
             const userUUID = 'USR-' + crypto.randomBytes(12).toString('hex');
             const cleanName = (googlePayload.name || googleEmail.split('@')[0]).trim().slice(0, 50);
-            const avatarUrl = sanitizeImageUrlForDb(googlePayload.picture) || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=500&q=80';
+            const avatarUrl = sanitizeImageUrlForDb(googlePayload.picture) || null;
 
             const registrationClient = await pool.connect();
             try {
@@ -5213,7 +5213,7 @@ const server = http.createServer(async (req, res) => {
                ON CONFLICT (district_id) DO NOTHING RETURNING *`,
                 [userUUID, userUUID, tempUser.name || '', tempUser.email, tempUser.password,
                   defaultRole, defaultRoles, 'Amateur', 'none',
-                  'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=500&q=80',
+                  null,
                   defaultStatus, districtId]
               );
             });
@@ -5925,7 +5925,7 @@ const server = http.createServer(async (req, res) => {
           [userIds]
         );
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, presets: dbRes.rows }));
+        res.end(JSON.stringify({ success: true, presets: Array.isArray(dbRes.rows) ? dbRes.rows : [] }));
       } catch (err) {
         const ref = makeErrorRef();
         logErrorWithRef(ref, 'GET /api/team-presets', err);

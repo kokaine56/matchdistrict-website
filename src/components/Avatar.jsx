@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 
 const PALETTES = [
-  { bg: 'bg-indigo-600/20 dark:bg-indigo-500/20', text: 'text-indigo-600 dark:text-indigo-400', border: 'border-indigo-500/30' },
-  { bg: 'bg-cyan-600/20 dark:bg-cyan-500/20', text: 'text-cyan-600 dark:text-cyan-400', border: 'border-cyan-500/30' },
-  { bg: 'bg-violet-600/20 dark:bg-violet-500/20', text: 'text-violet-600 dark:text-violet-400', border: 'border-violet-500/30' },
-  { bg: 'bg-emerald-600/20 dark:bg-emerald-500/20', text: 'text-emerald-600 dark:text-emerald-400', border: 'border-emerald-500/30' },
-  { bg: 'bg-amber-600/20 dark:bg-amber-500/20', text: 'text-amber-600 dark:text-amber-400', border: 'border-amber-500/30' },
-  { bg: 'bg-rose-600/20 dark:bg-rose-500/20', text: 'text-rose-600 dark:text-rose-400', border: 'border-rose-500/30' },
-  { bg: 'bg-sky-600/20 dark:bg-sky-500/20', text: 'text-sky-600 dark:text-sky-400', border: 'border-sky-500/30' },
-  { bg: 'bg-fuchsia-600/20 dark:bg-fuchsia-500/20', text: 'text-fuchsia-600 dark:text-fuchsia-400', border: 'border-fuchsia-500/30' },
+  { bg: 'bg-indigo-600', text: 'text-white', border: 'border-indigo-500/50' },
+  { bg: 'bg-cyan-700', text: 'text-white', border: 'border-cyan-500/50' },
+  { bg: 'bg-violet-700', text: 'text-white', border: 'border-violet-500/50' },
+  { bg: 'bg-emerald-700', text: 'text-white', border: 'border-emerald-500/50' },
+  { bg: 'bg-amber-700', text: 'text-white', border: 'border-amber-500/50' },
+  { bg: 'bg-rose-700', text: 'text-white', border: 'border-rose-500/50' },
+  { bg: 'bg-sky-700', text: 'text-white', border: 'border-sky-500/50' },
+  { bg: 'bg-fuchsia-700', text: 'text-white', border: 'border-fuchsia-500/50' },
 ];
 
 function getPalette(seed) {
@@ -54,8 +54,9 @@ export default function Avatar({
   alt,
   onClick,
 }) {
-  const avatarUrl = src || user?.avatar || user?.avatarUrl;
-  const displayName = name || user?.name || user?.display_name || '';
+  const resolvedAvatarUrl = src || user?.avatar || user?.avatarUrl || user?.avatar_url || user?.profile_image || user?.picture || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || user?.raw_user_meta_data?.avatar_url || user?.raw_user_meta_data?.picture;
+  const avatarUrl = typeof resolvedAvatarUrl === 'string' && !resolvedAvatarUrl.includes('photo-1566492031773-4f4e44671857') ? resolvedAvatarUrl : '';
+  const displayName = name || user?.name || user?.display_name || user?.full_name || user?.displayName || '';
   const userEmail = email || user?.email || '';
   const seed = districtId ?? user?.district_id ?? user?.districtId ?? user?.id ?? displayName;
 

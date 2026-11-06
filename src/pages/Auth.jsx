@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import SafeImage from '../components/SafeImage.jsx'
-import { DEFAULT_AVATAR } from '../utils/defaults.js'
+import Avatar from '../components/Avatar.jsx'
 import { useTheme } from '../ThemeContext.jsx'
 import Header from '../components/Header.jsx'
 import { supabase } from '../utils/supabaseClient'
@@ -1500,13 +1500,12 @@ function Auth({ onNavigate, initialMode = 'login' }) {
           onClick={() => handleAccountSelect(account)}
           className="w-full flex items-center gap-3.5 p-3.5 sm:p-4 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:border-primary/40 hover:bg-slate-100 dark:hover:bg-white/[0.08] active:scale-[0.99] transition-all text-left relative min-h-[64px] shadow-sm hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none duration-200"
         >
-          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0 ring-2 ring-transparent group-hover:ring-primary/20 transition-all">
-            {account.avatar ? (
-              <img src={account.avatar} alt="" className="avatar-img" />
-            ) : (
-              <img src={DEFAULT_AVATAR} alt="" className="avatar-img" />
-            )}
-          </div>
+          <Avatar
+            user={account}
+            size="w-11 h-11 sm:w-12 sm:h-12"
+            className="ring-2 ring-transparent group-hover:ring-primary/20 transition-all"
+            alt={account.name || account.email || 'Account avatar'}
+          />
           <div className="flex-1 min-w-0 pr-11 sm:pr-12">
             <div className="flex items-center gap-2 min-w-0">
               <p className="font-bold text-base sm:text-lg text-slate-900 dark:text-white truncate min-w-0">{account.name}</p>
@@ -1971,13 +1970,13 @@ function Auth({ onNavigate, initialMode = 'login' }) {
                 >
                   <div className="space-y-4">
                     <div className="flex items-center gap-3.5 p-3.5 sm:p-4 rounded-2xl bg-white/5 dark:bg-white/5 border border-slate-200 dark:border-white/10 min-h-[64px] transition-shadow duration-200 hover:shadow-sm">
-                      <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0 ring-2 ring-primary/20">
-                        {currentUser?.orgImage || currentUser?.avatar ? (
-                          <img src={currentUser.orgImage || currentUser.avatar} alt="" className="avatar-img" />
-                        ) : (
-                          <img src={DEFAULT_AVATAR} alt="" className="avatar-img" />
-                        )}
-                      </div>
+                      <Avatar
+                        user={currentUser}
+                        src={currentUser?.orgImage || currentUser?.avatar}
+                        size="w-11 h-11 sm:w-12 sm:h-12"
+                        className="ring-2 ring-primary/20"
+                        alt={currentUser?.name || currentUser?.email || 'Account avatar'}
+                      />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="font-bold text-sm text-slate-900 dark:text-white truncate">{currentUser?.name || 'Player'}</p>
