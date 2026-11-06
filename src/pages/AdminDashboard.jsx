@@ -537,15 +537,15 @@ export default function AdminDashboard({ onNavigate }) {
       })
       const data = await res.json()
       if (data.success) {
-        triggerToast('User account successfully terminated from database.')
+        triggerToast('User account deleted successfully.')
+        setUsersList(current => current.filter(user => user.id !== deleteUserId && user.uid !== deleteUserId))
         setDeleteUserId(null)
-        fetchUsers()
       } else {
-        triggerToast(data.error || 'Failed to delete user account.')
+        triggerToast(data.message || data.error || 'Failed to delete user account.')
       }
     } catch (err) {
       console.error('Error deleting user:', err)
-      triggerToast('Network error deleting user.')
+      triggerToast(err?.message || 'Network error deleting user. Please try again.')
     } finally {
       setDeleteLoading(false)
     }

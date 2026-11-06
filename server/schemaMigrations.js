@@ -1068,7 +1068,7 @@ export async function runSchemaMigrations(clientOrPool) {
         id VARCHAR(50) PRIMARY KEY,
         tournament_id VARCHAR(50) NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
         team_name VARCHAR(255) NOT NULL,
-        leader_user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        leader_user_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
         status VARCHAR(50) DEFAULT 'awaiting_members',
         registration_id VARCHAR(50),
         status_before_dq VARCHAR(50),
@@ -1089,7 +1089,7 @@ export async function runSchemaMigrations(clientOrPool) {
         id VARCHAR(50) PRIMARY KEY,
         tournament_team_id VARCHAR(50) NOT NULL REFERENCES tournament_teams(id) ON DELETE CASCADE,
         tournament_id VARCHAR(50) NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
-        user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
         role VARCHAR(20) NOT NULL,
         status VARCHAR(20) DEFAULT 'active',
         joined_at TIMESTAMPTZ DEFAULT NOW(),
@@ -1104,7 +1104,7 @@ export async function runSchemaMigrations(clientOrPool) {
         id VARCHAR(50) PRIMARY KEY,
         tournament_id VARCHAR(50) NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
         tournament_team_id VARCHAR(50) NOT NULL REFERENCES tournament_teams(id) ON DELETE CASCADE,
-        created_by_user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_by_user_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
         token VARCHAR(100) UNIQUE NOT NULL,
         status VARCHAR(20) DEFAULT 'active',
         expires_at TIMESTAMPTZ NOT NULL,
@@ -1261,7 +1261,7 @@ export async function runSchemaMigrations(clientOrPool) {
 
       CREATE TABLE IF NOT EXISTS tournament_prize_payments (
         id VARCHAR(50) PRIMARY KEY,
-        user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        user_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
         tournament_id VARCHAR(50) NOT NULL REFERENCES tournaments(id) ON DELETE RESTRICT,
         prize_award_id VARCHAR(50) NOT NULL UNIQUE REFERENCES tournament_prize_awards(id) ON DELETE RESTRICT,
         team_id VARCHAR(50) NOT NULL REFERENCES tournament_teams(id) ON DELETE RESTRICT,
@@ -1272,7 +1272,7 @@ export async function runSchemaMigrations(clientOrPool) {
         utr_reference VARCHAR(128) NOT NULL,
         recipient_upi_id VARCHAR(255) NOT NULL,
         paid_at TIMESTAMPTZ NOT NULL,
-        recorded_by VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        recorded_by VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
@@ -1292,6 +1292,73 @@ export async function runSchemaMigrations(clientOrPool) {
       CREATE TRIGGER trg_prize_payment_immutable
         BEFORE UPDATE OR DELETE ON tournament_prize_payments
         FOR EACH ROW EXECUTE FUNCTION reject_prize_payment_mutation();
+    `);
+
+    // Keep tournament and paid-prize history when an account is removed. The
+    // user references become nullable and are detached instead of cascading or
+    // restricting deletion of the historical records.
+    await runMigrationBatch(client, `
+      DO $$
+      DECLARE
+        item RECORD;
+        fk RECORD;
+        table_oid REGCLASS;
+      BEGIN
+        FOR item IN
+          SELECT * FROM (VALUES
+            ('tournament_teams', 'leader_user_id', 'fk_tournament_teams_leader_user_history'),
+            ('tournament_team_members', 'user_id', 'fk_tournament_team_members_user_history'),
+            ('tournament_team_invitations', 'created_by_user_id', 'fk_tournament_team_invitations_creator_history'),
+            ('tournament_prize_payments', 'user_id', 'fk_tournament_prize_payments_user_history'),
+            ('tournament_prize_payments', 'recorded_by', 'fk_tournament_prize_payments_recorder_history')
+          ) AS refs(table_name, column_name, constraint_name)
+        LOOP
+          table_oid := to_regclass('public.' || item.table_name);
+          IF table_oid IS NULL THEN CONTINUE; END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            WHERE c.conrelid = table_oid AND c.conname = item.constraint_name
+              AND c.contype = 'f' AND c.confdeltype = 'n'
+          ) THEN
+            FOR fk IN
+              SELECT c.conname
+              FROM pg_constraint c
+              JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+              WHERE c.conrelid = table_oid AND c.contype = 'f'
+                AND c.confrelid = 'public.users'::regclass AND a.attname = item.column_name
+            LOOP
+              EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', table_oid, fk.conname);
+            END LOOP;
+
+            IF EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = item.table_name
+                AND column_name = item.column_name AND is_nullable = 'NO'
+            ) THEN
+              EXECUTE format('ALTER TABLE %s ALTER COLUMN %I DROP NOT NULL', table_oid, item.column_name);
+            END IF;
+
+            EXECUTE format(
+              'ALTER TABLE %s ADD CONSTRAINT %I FOREIGN KEY (%I) REFERENCES public.users(id) ON DELETE SET NULL NOT VALID',
+              table_oid, item.constraint_name, item.column_name
+            );
+          END IF;
+        END LOOP;
+      END $$;
+
+      CREATE OR REPLACE FUNCTION reject_prize_payment_mutation() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF TG_OP = 'UPDATE'
+           AND (NEW.user_id IS NOT DISTINCT FROM OLD.user_id OR NEW.user_id IS NULL)
+           AND (NEW.recorded_by IS NOT DISTINCT FROM OLD.recorded_by OR NEW.recorded_by IS NULL)
+           AND (to_jsonb(NEW) - 'user_id' - 'recorded_by') = (to_jsonb(OLD) - 'user_id' - 'recorded_by') THEN
+          RETURN NEW;
+        END IF;
+        RAISE EXCEPTION 'Tournament prize payment history is immutable';
+      END;
+      $$;
     `);
 
     // 7. System monitoring and promotions

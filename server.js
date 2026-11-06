@@ -6673,6 +6673,8 @@ const server = http.createServer(async (req, res) => {
 
     if (urlPath.startsWith('/api/users/') && req.method === 'DELETE') {
       const id = urlPath.split('/api/users/')[1];
+      let client;
+      let transactionStarted = false;
       try {
         const authUser = getAuthUser(req);
         if (!authUser || !hasRole(authUser, ROLES.ADMIN)) {
@@ -6681,69 +6683,104 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // 1. Get the user's details first (especially email and uid) to purge from other schemas
-        const userRes = await pool.query('SELECT email, uid FROM users WHERE id = $1', [id]);
-        const userEmail = userRes.rows[0]?.email;
-        const userUid = userRes.rows[0]?.uid;
+        client = await pool.connect();
+        await client.query('BEGIN');
+        transactionStarted = true;
 
-        // 2. Delete from auth.users (Supabase Auth)
-        if (userUid) {
-          await pool.query('DELETE FROM auth.users WHERE id = $1', [userUid]);
+        // Public account identifiers are text. Resolve the canonical row first;
+        // never pass its prefixed uid into auth.users.id (a UUID column).
+        const userRes = await client.query(
+          'SELECT id, uid, email, role, roles FROM users WHERE id = $1 OR uid = $1 LIMIT 1 FOR UPDATE',
+          [id]
+        );
+        const targetUser = userRes.rows[0];
+        if (!targetUser) {
+          await client.query('ROLLBACK');
+          transactionStarted = false;
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'USER_NOT_FOUND', message: 'The user account no longer exists.' }));
+          return;
         }
-        if (userEmail) {
-          await pool.query('DELETE FROM auth.users WHERE email = $1', [userEmail]);
-          await pool.query('DELETE FROM organizer_applications WHERE email = $1', [userEmail]);
-          await pool.query('DELETE FROM otps WHERE email = $1', [userEmail]);
-          await pool.query('DELETE FROM password_resets WHERE email = $1', [userEmail]);
-          await pool.query('DELETE FROM temp_users WHERE email = $1', [userEmail]);
+
+        const authIds = [authUser.id, authUser.uid].filter(Boolean).map(String);
+        if (authIds.includes(String(targetUser.id)) || authIds.includes(String(targetUser.uid)) ||
+            String(authUser.email || '').toLowerCase() === String(targetUser.email || '').toLowerCase()) {
+          await client.query('ROLLBACK');
+          transactionStarted = false;
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'SELF_DELETE_BLOCKED', message: 'You cannot delete your own admin account.' }));
+          return;
+        }
+        const targetIsAdmin = String(targetUser.role || '').toLowerCase() === ROLES.ADMIN ||
+          (Array.isArray(targetUser.roles) && targetUser.roles.some(role => String(role).toLowerCase() === ROLES.ADMIN));
+        if (targetIsAdmin || String(targetUser.email || '').toLowerCase() === String(ROOT_ADMIN_EMAIL || '').toLowerCase()) {
+          await client.query('ROLLBACK');
+          transactionStarted = false;
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'ADMIN_DELETE_BLOCKED', message: 'Admin accounts cannot be deleted.' }));
+          return;
         }
 
-        // 3. Delete subscriptions & upgrade requests
-        await pool.query('DELETE FROM subscriptions WHERE organizer_id = $1', [id]);
-        await pool.query('DELETE FROM plan_upgrade_requests WHERE organizer_id = $1', [id]);
+        const userId = targetUser.id;
+        const userEmail = targetUser.email;
 
-        // 4. Delete followers / following
-        await pool.query('DELETE FROM organiser_followers WHERE user_id = $1 OR organiser_id = $1', [id]);
+        // Supabase Auth uses UUIDs. Match the linked auth identity by email,
+        // rather than treating the public USR-/ADM- id as auth.users.id.
+        await client.query('DELETE FROM auth.users WHERE LOWER(email) = LOWER($1)', [userEmail]);
+        await client.query('DELETE FROM profiles WHERE LOWER(email) = LOWER($1)', [userEmail]);
+        await client.query('DELETE FROM organizer_applications WHERE LOWER(email) = LOWER($1)', [userEmail]);
+        await client.query('DELETE FROM otps WHERE LOWER(email) = LOWER($1)', [userEmail]);
+        await client.query('DELETE FROM password_resets WHERE LOWER(email) = LOWER($1)', [userEmail]);
+        await client.query('DELETE FROM temp_users WHERE LOWER(email) = LOWER($1)', [userEmail]);
 
-        // 5. Delete alerts / notifications
-        await pool.query('DELETE FROM alerts WHERE user_id = $1', [id]);
+        await client.query('DELETE FROM subscriptions WHERE organizer_id = $1', [userId]);
+        await client.query('DELETE FROM plan_upgrade_requests WHERE organizer_id = $1', [userId]);
+        await client.query('DELETE FROM organiser_followers WHERE user_id = $1 OR organiser_id = $1', [userId]);
+        await client.query('DELETE FROM alerts WHERE user_id = $1', [userId]);
+        await client.query('DELETE FROM notifications WHERE user_id = $1', [userId]);
+        await client.query('DELETE FROM team_presets WHERE user_id = $1', [userId]);
 
-        // 6. Delete wallet transactions
-        await pool.query('DELETE FROM wallet_transactions WHERE user_id = $1', [id]);
+        await client.query('DELETE FROM staff_members WHERE organizer_id = $1', [userId]);
+        await client.query('DELETE FROM api_keys WHERE organizer_id = $1', [userId]);
+        await client.query('DELETE FROM custom_subdomains WHERE organizer_id = $1', [userId]);
+        await client.query('DELETE FROM white_label_settings WHERE organizer_id = $1', [userId]);
+        await client.query('DELETE FROM automation_rules WHERE organizer_id = $1', [userId]);
+        await client.query('DELETE FROM custom_links WHERE organizer_id = $1', [userId]);
+        await client.query('DELETE FROM custom_registration_forms WHERE organizer_id = $1', [userId]);
 
-        // 7. Delete team presets
-        await pool.query('DELETE FROM team_presets WHERE user_id = $1', [id]);
+        // Remove notices attached to hosted events, but retain tournaments,
+        // registrations, payment submissions, wallet and billing history.
+        await client.query(
+          `DELETE FROM tournament_notices
+           WHERE tournament_id IN (SELECT id FROM tournaments WHERE "orgId" = $1 OR org_id = $1)`,
+          [userId]
+        );
+        await client.query(
+          `DELETE FROM tournament_messages
+           WHERE tournament_id IN (SELECT id FROM tournaments WHERE "orgId" = $1 OR org_id = $1)`,
+          [userId]
+        );
+        await client.query('UPDATE tournament_prize_awards SET recorded_by = NULL WHERE recorded_by = $1', [userId]);
+        await client.query(
+          `UPDATE tournaments SET "orgId" = NULL, org_id = NULL
+           WHERE "orgId" = $1 OR org_id = $1`,
+          [userId]
+        );
 
-        // Cleanup subscription system tables
-        await pool.query('DELETE FROM staff_members WHERE organizer_id = $1', [id]);
-        await pool.query('DELETE FROM api_keys WHERE organizer_id = $1', [id]);
-        await pool.query('DELETE FROM custom_subdomains WHERE organizer_id = $1', [id]);
-        await pool.query('DELETE FROM white_label_settings WHERE organizer_id = $1', [id]);
-        await pool.query('DELETE FROM automation_rules WHERE organizer_id = $1', [id]);
-        await pool.query('DELETE FROM analytics_events WHERE organizer_id = $1', [id]);
-        await pool.query('DELETE FROM billing_history WHERE organizer_id = $1', [id]);
+        await client.query('DELETE FROM users WHERE id = $1', [userId]);
+        await client.query('COMMIT');
+        transactionStarted = false;
 
-        // 8. Delete user registrations from ALL tournaments
-        await pool.query('DELETE FROM tournament_registrations WHERE user_id = $1', [id]);
-
-        // 9. First delete all tournament registrations, notices, messages of tournaments hosted by this organizer
-        await pool.query('DELETE FROM tournament_registrations WHERE tournament_id IN (SELECT id FROM tournaments WHERE "orgId" = $1)', [id]);
-        await pool.query('DELETE FROM tournament_notices WHERE tournament_id IN (SELECT id FROM tournaments WHERE "orgId" = $1)', [id]);
-        await pool.query('DELETE FROM tournament_messages WHERE tournament_id IN (SELECT id FROM tournaments WHERE "orgId" = $1)', [id]);
-
-        // 10. Delete all tournaments hosted by this organizer
-        await pool.query('DELETE FROM tournaments WHERE "orgId" = $1', [id]);
-
-        // 11. Delete primary user record from public.users table
-        await pool.query('DELETE FROM users WHERE id = $1', [id]);
-
-        console.log(`\r\n📦 [MATCH DISTRICT DB] User "${id}" and all associated data completely purged from database.\r\n`);
+        console.log(`[ADMIN DELETE USER] Deleted user ${userId}; preserved tournament, registration, and payment history.`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, message: `User ${id} and all associated data purged successfully.` }));
+        res.end(JSON.stringify({ success: true, message: 'User account and associated profile data deleted successfully.' }));
       } catch (err) {
-        console.warn('⚠️ [MATCH DISTRICT DB] Supabase delete user failed:', err.message);
+        if (transactionStarted && client) await client.query('ROLLBACK').catch(() => {});
+        console.error('[ADMIN DELETE USER] User deletion transaction failed:', err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, error: err.message }));
+        res.end(JSON.stringify({ success: false, error: 'DELETE_FAILED', message: 'Could not delete the user account. No changes were saved. Please try again or contact support.' }));
+      } finally {
+        client?.release();
       }
       return;
     }
