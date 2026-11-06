@@ -290,7 +290,8 @@ function AppInner() {
     }
 
     if (!currentUser) {
-      return <Navigate to={`/login?redirect=/tournaments/${id}/register`} replace />
+      const registrationPath = `/tournaments/${id}/register`
+      return <Navigate to={`/login?redirect=${encodeURIComponent(registrationPath)}`} replace />
     }
 
     return (

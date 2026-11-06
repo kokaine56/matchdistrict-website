@@ -1389,10 +1389,6 @@ function TournamentDetail({ onNavigate, tournamentId }) {
                           disabled={isNavigatingToRegister}
                           onClick={() => {
                             if (isNavigatingToRegister) return;
-                            if (!currentUser) {
-                              navigate(`/login?redirect=${encodeURIComponent(`/tournaments/${tourney.id}`)}`);
-                              return;
-                            }
                             setIsNavigatingToRegister(true);
                             navigate(`/tournaments/${tourney.id}/register`);
                           }}
@@ -1457,10 +1453,6 @@ function TournamentDetail({ onNavigate, tournamentId }) {
                         disabled={isButtonDisabled}
                         onClick={() => {
                           if (isButtonDisabled || !btnState.action) return;
-                          if (!currentUser) {
-                            navigate(`/login?redirect=${encodeURIComponent(`/tournaments/${tourney.id}`)}`);
-                            return;
-                          }
                           setIsNavigatingToRegister(true);
                           navigate(`/tournaments/${tourney.id}/register`);
                         }}

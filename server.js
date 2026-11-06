@@ -1570,6 +1570,92 @@ function getAuthUser(req) {
   return user;
 }
 
+function getRegistrationRequestTokens(req) {
+  const tokens = [];
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    const value = authHeader.slice(7).trim();
+    if (value && value !== 'null' && value !== 'undefined') tokens.push(value);
+  }
+  const cookieMatch = req.headers.cookie?.match(/(^|;)\s*token\s*=\s*([^;]+)/);
+  if (cookieMatch) {
+    let value = cookieMatch[2];
+    try { value = decodeURIComponent(value); } catch {}
+    if (value && value !== 'null' && value !== 'undefined' && !tokens.includes(value)) tokens.push(value);
+  }
+  return tokens;
+}
+
+async function resolveTournamentRegistrationUser(req) {
+  const tokens = getRegistrationRequestTokens(req);
+  let identity = null;
+  let supabaseTokenError = null;
+
+  // Prefer the site's own signed token, but don't let an Authorization header
+  // containing a Supabase access token hide a valid Match District session cookie.
+  for (const token of tokens) {
+    const result = verifyJwt(token);
+    if (result.valid) {
+      identity = result.payload;
+      break;
+    }
+  }
+
+  if (!identity && tokens[0]) {
+    const authClient = supabaseAdmin || supabase;
+    if (authClient) {
+      const { data, error } = await authClient.auth.getUser(tokens[0]);
+      if (!error && data?.user) identity = data.user;
+      else supabaseTokenError = error || new Error('Supabase token did not resolve to an authenticated user.');
+    }
+  }
+
+  if (!identity) {
+    return {
+      user: null,
+      error: tokens.length
+        ? { code: 'SESSION_EXPIRED', message: 'Your session is invalid or has expired. Please sign in again.' }
+        : { code: 'UNAUTHORIZED', message: 'You must be signed in to register.' },
+      reason: supabaseTokenError?.message || (tokens.length ? 'No valid Match District or Supabase session token was supplied.' : 'No authentication token or session cookie was supplied.'),
+    };
+  }
+
+  const identityId = String(identity.id || identity.uid || '');
+  const identityEmail = String(identity.email || '').trim().toLowerCase();
+  let userResult = identityId
+    ? await pool.query('SELECT * FROM users WHERE id = $1::text OR uid = $1::text LIMIT 1', [identityId])
+    : { rows: [] };
+  if (!userResult.rows.length && identityEmail) {
+    userResult = await pool.query('SELECT * FROM users WHERE LOWER(BTRIM(email)) = $1::text LIMIT 1', [identityEmail]);
+  }
+
+  if (!userResult.rows.length) {
+    const profileResult = identityEmail
+      ? await pool.query('SELECT id, email FROM profiles WHERE LOWER(BTRIM(email)) = $1::text LIMIT 1', [identityEmail])
+      : { rows: [] };
+    return {
+      user: null,
+      error: { code: 'ACCOUNT_PROFILE_MISSING', message: 'We could not find a Match District account profile for this sign-in. Please contact support.' },
+      reason: profileResult.rows.length
+        ? `A profile exists for the authenticated identity, but no users record matched (profile id: ${profileResult.rows[0].id}).`
+        : `No users or profiles record matched the authenticated identity (id: ${identityId || 'missing'}, email: ${identityEmail || 'missing'}).`,
+    };
+  }
+
+  const user = userResult.rows[0];
+  req.authUser = { ...identity, ...user, id: String(user.id), uid: user.uid || String(user.id) };
+  return { user: req.authUser, error: null, reason: null };
+}
+
+function respondToRegistrationAuthFailure(res, routeName, authResult) {
+  const error = authResult.error || { code: 'UNAUTHORIZED', message: 'You must be signed in to register.' };
+  const status = error.code === 'ACCOUNT_PROFILE_MISSING' ? 404 : 401;
+  const ref = makeErrorRef();
+  logFullError(ref, routeName, 'resolve_registration_identity', new Error(authResult.reason || error.message));
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ success: false, error: error.code, message: error.message, ...(error.code === 'UNAUTHORIZED' ? {} : { ref }) }));
+}
+
 async function userHasLinkedDiscordAccount(userId, queryable = pool) {
   if (!userId) return false;
   const result = await queryable.query(
@@ -12729,7 +12815,8 @@ const server = http.createServer(async (req, res) => {
     const myRegMatch = urlPath.match(/^\/api\/tournaments\/([^/]+)\/my-registration$/);
     if (myRegMatch && req.method === 'GET') {
       try {
-        const authUser = getAuthUser(req);
+        const authResult = await resolveTournamentRegistrationUser(req);
+        const authUser = authResult.user;
         if (!authUser) {
           // Unauthenticated — return null registration rather than 401 so the client
           // can safely call this without a login guard and get "not registered".
@@ -14621,14 +14708,16 @@ const server = http.createServer(async (req, res) => {
       let body = '';
       req.on('data', chunk => { body += chunk; });
       req.on('end', async () => {
+        let registrationStep = 'resolve_registration_identity';
         try {
-          const authUser = getAuthUser(req);
-          if (!authUser) {
-            res.writeHead(401, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'UNAUTHORIZED', message: 'You must be signed in to register.' }));
+          const authResult = await resolveTournamentRegistrationUser(req);
+          if (!authResult.user) {
+            respondToRegistrationAuthFailure(res, 'POST /api/sessions/create/:tournamentId', authResult);
             return;
           }
+          const authUser = authResult.user;
 
+          registrationStep = 'parse_registration_payload';
           const formData = JSON.parse(body);
           if (!formData.team_name || !formData.captain) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -14637,6 +14726,7 @@ const server = http.createServer(async (req, res) => {
           }
 
           // Check tournament exists and is open
+          registrationStep = 'load_tournament';
           const tRes = await pool.query(
             'SELECT t.id, t.title, t.status, t."slotsTotal", COALESCE(rc.slots_filled, 0) AS "slotsFilled", t.entry_fee_amount, t."registrationCloseDate", t.is_free FROM tournaments t LEFT JOIN registered_tournament_team_counts rc ON rc.tournament_id = t.id WHERE t.id = $1',
             [tournamentId]
@@ -14672,6 +14762,7 @@ const server = http.createServer(async (req, res) => {
           }
 
           // Check duplicate registration / handle safe retry
+          registrationStep = 'check_existing_registration';
           let existingReg = null;
           let isOrphanRetry = false;
           const dupRes = await pool.query(
@@ -14708,6 +14799,7 @@ const server = http.createServer(async (req, res) => {
           }
 
           // Check duplicate team name (exclude current orphan if retrying)
+          registrationStep = 'check_team_name';
           let nameQuery = 'SELECT id FROM tournament_registrations WHERE tournament_id = $1 AND LOWER(team_name) = LOWER($2) AND status NOT IN (\'cancelled\', \'expired\', \'rejected\', \'PAYMENT_REJECTED\')';
           const nameParams = [tournamentId, formData.team_name.trim()];
           if (isOrphanRetry && existingReg) {
@@ -14725,6 +14817,7 @@ const server = http.createServer(async (req, res) => {
           const idempotencyKey = 'IK-' + crypto.randomBytes(12).toString('hex');
 
           // Clean up old active sessions for this user+tournament
+          registrationStep = 'remove_old_registration_sessions';
           await pool.query(
             "DELETE FROM registration_sessions WHERE user_id = $1 AND tournament_id = $2 AND status = 'active'",
             [authUser.id, tournamentId]
@@ -14738,6 +14831,7 @@ const server = http.createServer(async (req, res) => {
             existing_registration_id: isOrphanRetry && existingReg ? existingReg.id : null
           };
 
+          registrationStep = 'insert_registration_session';
           await pool.query(
             `INSERT INTO registration_sessions (id, tournament_id, user_id, form_data, idempotency_key, status, expires_at)
            VALUES ($1, $2, $3, $4, $5, 'active', $6)`,
@@ -14758,8 +14852,10 @@ const server = http.createServer(async (req, res) => {
             }
           }));
         } catch (err) {
+          const ref = makeErrorRef();
+          logFullError(ref, 'POST /api/sessions/create/:tournamentId', registrationStep, err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, error: err.message }));
+          res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: 'Could not start tournament registration because of a server error. Please try again.', ref }));
         }
       });
       return;
@@ -14769,12 +14865,12 @@ const server = http.createServer(async (req, res) => {
     if (req.url.match(/^\/api\/sessions\/([^\/]+)$/) && req.method === 'GET') {
       const sessionId = req.url.split('/')[3];
       try {
-        const authUser = getAuthUser(req);
-        if (!authUser) {
-          res.writeHead(401, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, error: 'UNAUTHORIZED' }));
+        const authResult = await resolveTournamentRegistrationUser(req);
+        if (!authResult.user) {
+          respondToRegistrationAuthFailure(res, 'GET /api/sessions/:id', authResult);
           return;
         }
+        const authUser = authResult.user;
 
         const sesRes = await pool.query('SELECT * FROM registration_sessions WHERE id = $1 AND user_id = $2', [sessionId, authUser.id]);
         if (sesRes.rows.length === 0) {
@@ -14871,12 +14967,12 @@ const server = http.createServer(async (req, res) => {
         let payload = null;
         try {
           client = await pool.connect();
-          const authUser = getAuthUser(req);
-          if (!authUser) {
-            res.writeHead(401, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'UNAUTHORIZED', message: 'You must be signed in to complete registration.' }));
+          const authResult = await resolveTournamentRegistrationUser(req);
+          if (!authResult.user) {
+            respondToRegistrationAuthFailure(res, 'POST /api/sessions/:id/complete', authResult);
             return;
           }
+          const authUser = authResult.user;
 
           payload = JSON.parse(body);
 
@@ -15304,14 +15400,16 @@ const server = http.createServer(async (req, res) => {
       let body = '';
       req.on('data', chunk => { body += chunk; });
       req.on('end', async () => {
+        let registrationStep = 'resolve_registration_identity';
         try {
-          const authUser = getAuthUser(req);
-          if (!authUser) {
-            res.writeHead(401, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'UNAUTHORIZED', message: 'You must be signed in to register.' }));
+          const authResult = await resolveTournamentRegistrationUser(req);
+          if (!authResult.user) {
+            respondToRegistrationAuthFailure(res, 'POST /api/tournaments/:id/register', authResult);
             return;
           }
+          const authUser = authResult.user;
 
+          registrationStep = 'parse_registration_payload';
           const data = JSON.parse(body);
           if (!data.team_name || !data.captain) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -15321,6 +15419,7 @@ const server = http.createServer(async (req, res) => {
 
           // Check if user is already registered for this tournament
           // Allow re-registration if previous attempt was rejected, cancelled, or expired; safe retry for orphans
+          registrationStep = 'check_existing_registration';
           let existingOrphanId = null;
           const dupRes = await pool.query(
             `SELECT tr.id, tr.status, tr.screenshot_url, tr.transaction_id,
@@ -15363,9 +15462,11 @@ const server = http.createServer(async (req, res) => {
           let status = 'approved';
           let assignedCode = null;
           try {
+            registrationStep = 'begin_registration_transaction';
             await regClient.query('BEGIN');
 
             // Transaction row-lock on tournament row (PAY-004 concurrency control)
+            registrationStep = 'lock_tournament';
             const tRes = await regClient.query(
               'SELECT title, "slotsTotal", "slotsFilled", "entry_fee_amount", "registrationCloseDate", unique_amount_suffix_enabled, is_free, teams_per_group, discord_invite_url FROM tournaments WHERE id = $1::varchar FOR UPDATE',
               [id]
@@ -15380,6 +15481,7 @@ const server = http.createServer(async (req, res) => {
             t = tRes.rows[0];
 
             // Check duplicate team name (exclude current orphan if retrying)
+            registrationStep = 'check_team_name';
             let nameQuery = 'SELECT id FROM tournament_registrations WHERE tournament_id = $1 AND LOWER(team_name) = LOWER($2) AND status NOT IN (\'cancelled\', \'expired\', \'rejected\', \'PAYMENT_REJECTED\')';
             const nameParams = [id, data.team_name.trim()];
             if (existingOrphanId) {
@@ -15471,6 +15573,7 @@ const server = http.createServer(async (req, res) => {
 
             const assignedAmountDue = isPaid ? amountToPay : null;
             if (existingOrphanId) {
+              registrationStep = 'update_existing_registration';
               dbRes = await regClient.query(
                 `UPDATE tournament_registrations
                SET team_name = $1::varchar, captain = $2::varchar, captain_uid = $3::varchar, members = $4::text,
@@ -15479,6 +15582,7 @@ const server = http.createServer(async (req, res) => {
                 [data.team_name, data.captain, data.captain_uid || null, membersStr, status, slotNumber, data.email || null, data.phone || null, idempotencyKey, assignedAmountDue, existingOrphanId]
               );
             } else {
+              registrationStep = 'insert_tournament_registration';
               dbRes = await regClient.query(
                 `INSERT INTO tournament_registrations (id, tournament_id, user_id, team_name, captain, captain_uid, members, status, slot_number, email, phone, idempotency_key, version, amount_due)
                VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::varchar, $7::text, $8::varchar, $9::int, $10::varchar, $11::varchar, $12::varchar, 1, $13::numeric) RETURNING *`,
@@ -15500,6 +15604,7 @@ const server = http.createServer(async (req, res) => {
               }
             }
 
+            registrationStep = 'commit_registration_transaction';
             await regClient.query('COMMIT');
 
             if (assignedCode && dbRes?.rows?.[0]) {
@@ -15543,7 +15648,7 @@ const server = http.createServer(async (req, res) => {
         } catch (err) {
           const ref = makeErrorRef();
           console.error(`[Register Error] Ref:${ref} - Error registering team for tournament "${id}":`, err);
-          logErrorWithRef(ref, 'POST /api/tournaments/:id/register', err, 'register_team');
+          logErrorWithRef(ref, 'POST /api/tournaments/:id/register', err, registrationStep);
           const isSchemaError = err.message && (err.message.includes('does not exist') || err.message.includes('column') || err.message.includes('relation'));
           const message = isSchemaError
             ? `Registration service configuration error: ${err.message}. Please contact support. (Ref: ${ref})`
@@ -15564,12 +15669,12 @@ const server = http.createServer(async (req, res) => {
       req.on('data', chunk => { body += chunk; });
       req.on('end', async () => {
         try {
-          const authUser = getAuthUser(req);
-          if (!authUser) {
-            res.writeHead(401, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'UNAUTHORIZED', message: 'You must be signed in to confirm registration.' }));
+          const authResult = await resolveTournamentRegistrationUser(req);
+          if (!authResult.user) {
+            respondToRegistrationAuthFailure(res, 'POST /api/tournaments/:id/register/:regId/confirm', authResult);
             return;
           }
+          const authUser = authResult.user;
 
           const regRes = await pool.query(
             `SELECT r.*, t.is_free, t.entry_fee_amount
@@ -15636,12 +15741,12 @@ const server = http.createServer(async (req, res) => {
       req.on('data', chunk => { body += chunk; });
       req.on('end', async () => {
         try {
-          const authUser = getAuthUser(req);
-          if (!authUser) {
-            res.writeHead(401, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'UNAUTHORIZED', message: 'You must be signed in to submit payment proof.' }));
+          const authResult = await resolveTournamentRegistrationUser(req);
+          if (!authResult.user) {
+            respondToRegistrationAuthFailure(res, 'POST /api/tournaments/:id/register/:regId/payment', authResult);
             return;
           }
+          const authUser = authResult.user;
 
           const bodyData = JSON.parse(body);
           if (!bodyData.screenshot_url || !isAllowedStorageUrl(bodyData.screenshot_url)) {

@@ -5,7 +5,7 @@ import LoadingScreen from '../components/LoadingScreen.jsx'
 import StickyBottomBar from '../components/StickyBottomBar.jsx'
 import BottomSheetModal from '../components/BottomSheetModal.jsx'
 import { useCurrentUser } from '../hooks/useCurrentUser.js'
-import { getAuthToken } from '../utils/getAuthToken.js'
+import { getAuthToken, setAuthTokenInMemory } from '../utils/getAuthToken.js'
 import { fetchJsonWithRetry } from '../utils/api.js'
 import { uploadImage } from '../utils/imagekitUpload.js'
 import GameIcon from '../components/GameIcon'
@@ -28,6 +28,42 @@ const ALL_FIELDS = [
   'sub_0_ign', 'sub_0_uid',
   'sub_1_ign', 'sub_1_uid',
 ]
+
+function getInitialRegistrationForm(tournamentId) {
+  const emptyForm = {
+    teamName: '',
+    email: '',
+    phone: '',
+    captainIgn: '',
+    captainUid: '',
+    players: [{ ign: '', uid: '' }, { ign: '', uid: '' }, { ign: '', uid: '' }],
+    substitutes: [{ ign: '', uid: '' }, { ign: '', uid: '' }],
+  }
+  try {
+    const draft = JSON.parse(sessionStorage.getItem(`md_tournament_registration_${tournamentId}`) || 'null')
+    if (!draft || typeof draft !== 'object') return emptyForm
+    const readText = (key) => typeof draft[key] === 'string' ? draft[key] : ''
+    const readRoster = (key, defaults) => defaults.map((fallback, index) => {
+      const player = Array.isArray(draft[key]) ? draft[key][index] : null
+      return {
+        ign: typeof player?.ign === 'string' ? player.ign : fallback.ign,
+        uid: typeof player?.uid === 'string' ? player.uid : fallback.uid,
+      }
+    })
+    return {
+      ...emptyForm,
+      teamName: readText('teamName'),
+      email: readText('email'),
+      phone: readText('phone'),
+      captainIgn: readText('captainIgn'),
+      captainUid: readText('captainUid'),
+      players: readRoster('players', emptyForm.players),
+      substitutes: readRoster('substitutes', emptyForm.substitutes),
+    }
+  } catch {
+    return emptyForm
+  }
+}
 
 export const toMessage = (value) => {
   if (value == null) return ''
@@ -392,7 +428,8 @@ async function downscaleScreenshot(file) {
 function RegistrationPage({ onNavigate }) {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [currentUser] = useCurrentUser()
+  const [currentUser, setCurrentUser] = useCurrentUser()
+  const registrationDraftKey = `md_tournament_registration_${id}`
   const fileInputRef = useRef(null)
   const paymentSubmittedRef = useRef(false)
 
@@ -400,15 +437,7 @@ function RegistrationPage({ onNavigate }) {
   const [loadingTourney, setLoadingTourney] = useState(true)
   const [step, setStep] = useState('form')
 
-  const [form, setForm] = useState({
-    teamName: '',
-    email: '',
-    phone: '',
-    captainIgn: '',
-    captainUid: '',
-    players: [{ ign: '', uid: '' }, { ign: '', uid: '' }, { ign: '', uid: '' }],
-    substitutes: [{ ign: '', uid: '' }, { ign: '', uid: '' }],
-  })
+  const [form, setForm] = useState(() => getInitialRegistrationForm(id))
   const [savedPresets, setSavedPresets] = useState([])
   const [loadingPresets, setLoadingPresets] = useState(false)
   const [presetsError, setPresetsError] = useState('')
@@ -654,6 +683,17 @@ function RegistrationPage({ onNavigate }) {
     }, 80)
   }
 
+  const redirectToLoginPreservingForm = () => {
+    try {
+      sessionStorage.setItem(registrationDraftKey, JSON.stringify(form))
+    } catch (storageError) {
+      console.warn('Could not preserve tournament registration form before login:', storageError)
+    }
+    setAuthTokenInMemory(null)
+    setCurrentUser(null)
+    navigate(`/login?redirect=${encodeURIComponent(`/tournaments/${id}/register`)}`, { replace: true })
+  }
+
   const handleRegisterTeam = async (e) => {
     e.preventDefault()
     setServerError('')
@@ -665,6 +705,10 @@ function RegistrationPage({ onNavigate }) {
     setIsSubmitting(true)
     try {
       const token = await getAuthToken()
+      if (!token) {
+        redirectToLoginPreservingForm()
+        return
+      }
       const captainObj = {
         role: 'captain',
         name: form.captainIgn.trim(),
@@ -721,7 +765,12 @@ function RegistrationPage({ onNavigate }) {
         } catch (e) {
           throw new Error('Server returned an invalid response. Please try again.')
         }
+        if (sessionRes.status === 401 || sessionData?.error === 'SESSION_EXPIRED') {
+          redirectToLoginPreservingForm()
+          return
+        }
         if (sessionData.already_registered) {
+          try { sessionStorage.removeItem(registrationDraftKey) } catch {}
           setRegisteredTeam(sessionData.registration)
           setStep('success')
           return
@@ -754,6 +803,7 @@ function RegistrationPage({ onNavigate }) {
         }
 
         if (regData.already_registered) {
+          try { sessionStorage.removeItem(registrationDraftKey) } catch {}
           setRegisteredTeam(regData.registration)
           navigate(`/tournaments/${id}?registered=true`, {
             replace: true,
@@ -765,7 +815,13 @@ function RegistrationPage({ onNavigate }) {
           return
         }
 
+        if (regRes.status === 401 || regData?.error === 'SESSION_EXPIRED') {
+          redirectToLoginPreservingForm()
+          return
+        }
+
         if (regRes.ok && regData.success) {
+          try { sessionStorage.removeItem(registrationDraftKey) } catch {}
           setRegisteredTeam(regData.registration)
           navigate(`/tournaments/${id}?registered=true`, {
             replace: true,
@@ -1131,6 +1187,10 @@ function RegistrationPage({ onNavigate }) {
       await new Promise(resolve => window.setTimeout(resolve, 0))
       const submitWork = async () => {
         const token = await getAuthToken()
+        if (!token) {
+          redirectToLoginPreservingForm()
+          return
+        }
         const screenshotUrl = await uploadImage(payment.screenshotFile, { signal: controller.signal, token })
         if (controller.signal.aborted) throw new Error('Payment submission was cancelled. Please try again.')
 
@@ -1161,6 +1221,10 @@ function RegistrationPage({ onNavigate }) {
         }
 
         const data = await res.json().catch(() => null)
+        if (res.status === 401 || data?.error === 'SESSION_EXPIRED') {
+          redirectToLoginPreservingForm()
+          return
+        }
         if (!data || typeof data !== 'object') {
           throw new Error('The server did not confirm the payment proof. Please try again.')
         }
@@ -1181,12 +1245,17 @@ function RegistrationPage({ onNavigate }) {
         setSubmittedTimeIST(nowIST)
         if (data.registration) setRegisteredTeam(data.registration)
         if (data.amount_to_pay) setAmountToPay(data.amount_to_pay)
+        try { sessionStorage.removeItem(registrationDraftKey) } catch {}
         setShowConfirmModal(false)
         setStep('success')
       }
 
       await Promise.race([submitWork(), timeout])
     } catch (unexpectedErr) {
+      if (unexpectedErr?.status === 401 || unexpectedErr?.code === 'SESSION_EXPIRED') {
+        redirectToLoginPreservingForm()
+        return
+      }
       let errorMessage
       if (timedOut) {
         errorMessage = 'Payment submission timed out after 60 seconds. Check your connection and try again.'
