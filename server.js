@@ -7499,7 +7499,7 @@ const server = http.createServer(async (req, res) => {
         // 2. Fetch registrations
         const regRes = await pool.query(
           `SELECT id, tournament_id, user_id, team_name, captain, captain_uid, members, status, slot_number, created_at,
-                discord_verified, discord_verification_status, discord_captain_id, discord_member_ids
+                discord_verified, discord_verification_status, discord_captain_id, discord_member_ids, discord_verified_at
          FROM tournament_registrations
          WHERE tournament_id = $1 AND LOWER(COALESCE(status, '')) = 'approved'
          ORDER BY created_at ASC`,
@@ -7727,6 +7727,24 @@ const server = http.createServer(async (req, res) => {
 
           const teamLinkedMembers = teamMembers.filter((m) => m.is_linked && m.discord_id);
           const teamUnlinkedCount = teamMembers.filter((m) => !m.is_linked).length;
+          const registrationRoster = parseRosterMembers(reg.members);
+          const isCaptainEntry = (member) => member.is_captain === true ||
+            (reg.captain_uid && String(member.uid || '') === String(reg.captain_uid)) ||
+            (!reg.captain_uid && String(member.ign || '').trim().toLowerCase() === String(reg.captain || '').trim().toLowerCase());
+          const squadMembers = [
+            { ign: reg.captain || '', uid: reg.captain_uid || '' },
+            ...registrationRoster.filter(member => !member.is_substitute && member.role !== 'substitute' && !isCaptainEntry(member)),
+          ].filter(member => member.ign || member.uid);
+          const substitutes = registrationRoster.filter(member => member.is_substitute || member.role === 'substitute');
+          let verifiedDiscordMemberIds = Array.isArray(reg.discord_member_ids) ? reg.discord_member_ids : [];
+          if (typeof reg.discord_member_ids === 'string') {
+            try { verifiedDiscordMemberIds = JSON.parse(reg.discord_member_ids) || []; } catch { verifiedDiscordMemberIds = []; }
+          }
+          const discordMembers = [...new Set([
+            reg.discord_captain_id,
+            ...verifiedDiscordMemberIds,
+            ...teamMembers.map(member => member.discord_id),
+          ].map(id => String(id || '').trim()).filter(id => /^\d{17,20}$/.test(id)))];
 
           teams.push({
             id: bridgedTeam?.id || reg.id,
@@ -7736,8 +7754,19 @@ const server = http.createServer(async (req, res) => {
             status: reg.status,
             discord_verified: Boolean(reg.discord_verification_status === 'verified' || reg.discord_verified),
             discord_verification_status: reg.discord_verification_status || (reg.discord_verified ? 'verified' : 'pending'),
+            discord_verified_at: reg.discord_verified_at || null,
             is_eligible: isEligible,
-            leader: teamMembers.find((m) => m.role === 'leader') || null,
+            captain_uid: reg.captain_uid || '',
+            leader: {
+              ...(teamMembers.find((m) => m.role === 'leader') || {}),
+              name: reg.captain || 'Team Leader',
+              ign: reg.captain || '',
+              uid: reg.captain_uid || '',
+              discord_id: reg.discord_captain_id || teamMembers.find((m) => m.role === 'leader')?.discord_id || null,
+            },
+            squad: squadMembers,
+            substitutes,
+            discord_members: discordMembers,
             members: teamMembers,
             linked_members: teamLinkedMembers,
             unlinked_count: teamUnlinkedCount,
@@ -7981,6 +8010,13 @@ const server = http.createServer(async (req, res) => {
             teamSize = 4;
           }
           const teammatesNeeded = Math.max(0, teamSize - 1);
+          const savedRoster = parseRosterMembers(reg.members);
+          const isCaptainEntry = (member) => member.is_captain === true ||
+            (reg.captain_uid && String(member.uid || '') === String(reg.captain_uid)) ||
+            (!reg.captain_uid && String(member.ign || '').trim().toLowerCase() === String(reg.captain || '').trim().toLowerCase());
+          const players = savedRoster.filter(member => !member.is_substitute && member.role !== 'substitute' && !isCaptainEntry(member));
+          const substitutes = savedRoster.filter(member => member.is_substitute || member.role === 'substitute');
+          const squad = [{ ign: reg.captain || '', uid: reg.captain_uid || '' }, ...players];
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
@@ -7988,6 +8024,10 @@ const server = http.createServer(async (req, res) => {
             registration_id: reg.id,
             team_name: reg.team_name,
             captain_name: reg.captain,
+            captain_uid: reg.captain_uid || '',
+            squad,
+            players,
+            substitutes,
             teammates_needed: teammatesNeeded
           }));
         } catch (err) {
@@ -8041,7 +8081,7 @@ const server = http.createServer(async (req, res) => {
 
           if (!/^\d{17,20}$/.test(captainDiscordId)) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'INVALID_CAPTAIN_ID', message: 'Invalid captain Discord ID.' }));
+            res.end(JSON.stringify({ success: false, error: 'INVALID_CAPTAIN_ID', message: 'Invalid Team Leader Discord ID.' }));
             return;
           }
 
@@ -8135,19 +8175,32 @@ const server = http.createServer(async (req, res) => {
                discord_verified_at = CURRENT_TIMESTAMP,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = $3 AND tournament_id = $4
-           RETURNING id, team_name, slot_number, discord_verification_status`,
+           RETURNING id, team_name, captain, captain_uid, members, discord_captain_id, discord_member_ids, discord_verification_status`,
             [captainDiscordId, JSON.stringify(teammateDiscordIds), registrationId, tournament.id]
           );
 
           await client.query('COMMIT');
           const finalReg = updRes.rows[0];
+          const savedRoster = parseRosterMembers(finalReg.members);
+          const isCaptainEntry = (member) => member.is_captain === true ||
+            (finalReg.captain_uid && String(member.uid || '') === String(finalReg.captain_uid)) ||
+            (!finalReg.captain_uid && String(member.ign || '').trim().toLowerCase() === String(finalReg.captain || '').trim().toLowerCase());
+          const players = savedRoster.filter(member => !member.is_substitute && member.role !== 'substitute' && !isCaptainEntry(member));
+          const substitutes = savedRoster.filter(member => member.is_substitute || member.role === 'substitute');
+          const squad = [{ ign: finalReg.captain || '', uid: finalReg.captain_uid || '' }, ...players];
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             success: true,
             registration_id: finalReg.id,
             team_name: finalReg.team_name,
-            slot_number: finalReg.slot_number || null
+            captain_name: finalReg.captain,
+            captain_uid: finalReg.captain_uid || '',
+            squad,
+            players,
+            substitutes,
+            discord_captain_id: finalReg.discord_captain_id,
+            discord_member_ids: Array.isArray(finalReg.discord_member_ids) ? finalReg.discord_member_ids : teammateDiscordIds
           }));
         } catch (err) {
           if (client) {
