@@ -1652,13 +1652,14 @@ function Profile({ onNavigate, selectedUserProfile }) {
       })
       const data = await res.json()
       if (data.success) {
-        triggerToast(`Password reset link sent to ${currentUser.email}`)
+        triggerToast(`Password reset code sent to ${currentUser.email}`)
+        window.location.assign(`/reset-password?reset=code&email=${encodeURIComponent(currentUser.email)}`)
       } else {
-        triggerToast(data.error || 'Failed to send reset link.')
+        triggerToast(data.message || data.error || 'Failed to send reset code.')
       }
     } catch (err) {
       console.error(err)
-      triggerToast('Error sending reset link.')
+      triggerToast('Error sending reset code.')
     }
   }
 

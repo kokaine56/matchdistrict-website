@@ -16,11 +16,11 @@ function createProfileFixture(users, profiles = []) {
         const emailConflict = state.profiles.some(profile => profile.email === user.email && profile.id !== user.uid);
         const idConflict = state.profiles.some(profile => profile.id === user.uid);
         if (emailConflict || idConflict) continue;
-        state.profiles.push({ id: user.uid, uid: user.uid, name: user.name, email: user.email, username: user.username });
+        state.profiles.push({ id: user.uid, uid: user.uid, name: user.name, email: user.email });
         inserted += 1;
       }
 
-      return { rows: [{ email_conflicts_skipped: conflicts.length, profiles_inserted: inserted }] };
+      return { rows: [{ email_conflicts_skipped: conflicts.length, conflicting_emails: conflicts.map(user => user.email), profiles_inserted: inserted }] };
     },
   };
   return { client, state };
@@ -34,9 +34,9 @@ test('inserts a missing user profile without changing the user identity', async 
 });
 
 test('leaves an existing profile unchanged and repeated initialization is idempotent', async () => {
-  const existing = { id: 'user-1', uid: 'user-1', email: 'player@example.test', name: 'Existing', username: 'kept' };
+  const existing = { id: 'user-1', uid: 'user-1', email: 'player@example.test', name: 'Existing' };
   const fixture = createProfileFixture(
-    [{ uid: 'user-1', name: 'New source name', email: 'player@example.test', username: 'new-name' }],
+    [{ uid: 'user-1', name: 'New source name', email: 'player@example.test' }],
     [existing]
   );
 

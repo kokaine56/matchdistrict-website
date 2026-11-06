@@ -328,6 +328,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
   // Forgot password form state
   const [forgotForm, setForgotForm] = useState({
     email: '',
+    code: '',
     password: '',
     confirmPassword: ''
   })
@@ -439,11 +440,18 @@ function Auth({ onNavigate, initialMode = 'login' }) {
     setRegSpamCooldownSeconds(seconds)
   }
 
-  // Parse reset token from search params or sync when initialMode prop changes
+  // Restore the reset form for a code request initiated from another account screen,
+  // or validate an already-issued legacy reset link.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const token = params.get('token')
-    if (token) {
+    if (params.get('reset') === 'code') {
+      const email = params.get('email') || ''
+      setForgotForm(prev => ({ ...prev, email }))
+      setResetToken('')
+      setIsTokenValid(true)
+      setAuthMode('reset-password')
+    } else if (token) {
       setResetToken(token)
       setAuthMode('reset-password')
       
@@ -813,7 +821,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
   // Forgot Password Validation
   const isForgotEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotForm.email)
   const forgotPassStrength = checkPasswordStrength(forgotForm.password)
-  const isForgotResetValid = forgotPassStrength.hasMinLen && forgotPassStrength.hasAlphabet && forgotPassStrength.hasNumber && forgotPassStrength.hasSymbol && forgotForm.confirmPassword === forgotForm.password
+  const isForgotResetValid = (Boolean(resetToken) || /^\d{6}$/.test(forgotForm.code)) && forgotPassStrength.hasMinLen && forgotPassStrength.hasAlphabet && forgotPassStrength.hasNumber && forgotPassStrength.hasSymbol && forgotForm.confirmPassword === forgotForm.password
 
   // --- Submit Handlers ---
 
@@ -1284,10 +1292,13 @@ function Auth({ onNavigate, initialMode = 'login' }) {
       const data = await res.json()
       if (res.ok && data.success) {
         setDirection(0)
-        setForgotStep(2)
-        triggerToast(`Password reset link dispatched to ${forgotForm.email}`)
+        setForgotForm(prev => ({ ...prev, code: '' }))
+        setResetToken('')
+        setIsTokenValid(true)
+        setAuthMode('reset-password')
+        triggerToast(`Password reset code sent to ${forgotForm.email}`)
       } else {
-        triggerToast(data.error || 'Failed to send reset link.')
+        triggerToast(data.message || data.error || 'Failed to send reset code.')
       }
     } catch (err) {
       triggerToast('Failed to send reset email. Check server connection.')
@@ -1306,7 +1317,12 @@ function Auth({ onNavigate, initialMode = 'login' }) {
       const res = await fetch('/api/auth/reset-password-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: resetToken, password: forgotForm.password })
+        body: JSON.stringify({
+          token: resetToken || undefined,
+          email: forgotForm.email,
+          code: resetToken ? undefined : forgotForm.code,
+          password: forgotForm.password
+        })
       })
       const data = await res.json()
       if (res.ok && data.success) {
@@ -1315,11 +1331,11 @@ function Auth({ onNavigate, initialMode = 'login' }) {
           setDirection(0)
           setAuthMode('login')
           setForgotStep(1)
-          setForgotForm({ email: '', password: '', confirmPassword: '' })
+          setForgotForm({ email: '', code: '', password: '', confirmPassword: '' })
           onNavigate && onNavigate('login')
         }, 2000)
       } else {
-        triggerToast(data.error || 'Failed to reset password. Link may be invalid or expired.')
+        triggerToast(data.message || data.error || 'Failed to reset password. The code may be invalid or expired.')
       }
     } catch (err) {
       triggerToast('Server connection failed. Please try again.')
@@ -1763,7 +1779,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
                   className="w-full"
                 >
                   {forgotStep === 1 ? (
-                    /* Forgot Step 1: Request reset link email */
+                    /* Forgot Step 1: Request reset code email */
                     <form onSubmit={handleForgotEmailSubmit} className="space-y-4 w-full">
                       <div className="space-y-1.5">
                         <label className="text-[10px] text-on-surface-variant/80 font-bold uppercase tracking-wider font-label-caps">Email Address</label>
@@ -1789,7 +1805,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
                           disabled={!isForgotEmailValid || isLoading}
                           className="w-full h-11 bg-primary hover:bg-primary/95 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none text-white rounded-xl font-headline-md text-xs font-bold transition-all flex items-center justify-center gap-1.5"
                         >
-                          <span>Send Password Reset Link</span>
+                          <span>Send Password Reset Code</span>
                           <span className="material-symbols-outlined text-[18px]">send</span>
                         </button>
                         <button 
@@ -1802,18 +1818,18 @@ function Auth({ onNavigate, initialMode = 'login' }) {
                       </div>
                     </form>
                   ) : (
-                    /* Forgot Step 2: Confirmation that reset link email was sent */
+                    /* Legacy confirmation panel retained for the existing step state */
                     <div className="text-center space-y-4 py-4">
                       <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto">
                         <span className="material-symbols-outlined text-3xl">mark_email_read</span>
                       </div>
-                      <h3 className="text-slate-900 dark:text-white font-bold text-sm">Reset Link Dispatched</h3>
+                      <h3 className="text-slate-900 dark:text-white font-bold text-sm">Reset Code Sent</h3>
                       <p className="font-body-sm text-xs text-on-surface-variant leading-relaxed">
-                        A secure password reset link has been sent to:<br />
+                        A password reset code has been sent to:<br />
                         <span className="text-primary font-bold">{forgotForm.email}</span>
                       </p>
                       <p className="font-body-sm text-[10px] text-on-surface-variant/60 leading-relaxed">
-                        The link is valid for <strong>1 hour</strong>. Once utilized, it will automatically deactivate. If you don't receive it shortly, please verify your spam folder.
+                        The code is valid for <strong>10 minutes</strong>. If you don't receive it shortly, please verify your spam folder.
                       </p>
                       <button 
                         type="button" 
@@ -1870,6 +1886,22 @@ function Auth({ onNavigate, initialMode = 'login' }) {
                   >
                     <form onSubmit={handleForgotResetSubmit} className="space-y-4 w-full">
                       <div className="space-y-3">
+                        {!resetToken && (
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-on-surface-variant/80 font-bold uppercase tracking-wider font-label-caps">6-Digit Reset Code</label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                              maxLength={6}
+                              placeholder="Enter the code from your email"
+                              value={forgotForm.code}
+                              onChange={(e) => setForgotForm({ ...forgotForm, code: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                              className="w-full h-11 bg-slate-50 dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl px-4 text-slate-900 dark:text-white font-body-md font-bold tracking-[0.3em] focus:border-primary focus:ring-[3px] focus:ring-primary/10 outline-none transition-all"
+                              required
+                            />
+                          </div>
+                        )}
                         <div className="space-y-1">
                           <label className="text-[10px] text-on-surface-variant/80 font-bold uppercase tracking-wider font-label-caps">New Password</label>
                           <div className="relative group">

@@ -912,10 +912,30 @@ if (!RESEND_API_KEY) {
 const resend = new Resend(RESEND_API_KEY);
 
 // Helper: send email via Resend with consistent error handling
-async function sendEmail({ to, subject, html }) {
-  if (!RESEND_API_KEY) {
-    console.warn(`⚠️ [EMAIL] Skipping send to ${to} — RESEND_API_KEY is not configured.`);
-    return { success: false, error: 'Email service not configured' };
+function emailHtmlToText(html) {
+  return String(html || '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n')
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&copy;/gi, '(c)')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*/g, '\n')
+    .trim();
+}
+
+async function sendEmail({ to, subject, html, text }) {
+  if (!RESEND_API_KEY || !RESEND_FROM_EMAIL) {
+    const message = !RESEND_API_KEY ? 'RESEND_API_KEY is not configured.' : 'RESEND_FROM_EMAIL is not configured.';
+    console.error(`[EMAIL] Delivery unavailable: ${message}`);
+    return { success: false, error: 'EMAIL_SERVICE_NOT_CONFIGURED', message };
   }
   try {
     const recipients = Array.isArray(to) ? to : [to];
@@ -924,17 +944,27 @@ async function sendEmail({ to, subject, html }) {
       to: recipients,
       subject,
       html,
+      text: text || emailHtmlToText(html),
     });
     if (error) {
-      console.error(`❌ [RESEND] Failed to send email to ${recipients.join(', ')}:`, error.message || JSON.stringify(error));
-      return { success: false, error: error.message || 'Resend API error' };
+      console.error(`❌ [RESEND] Failed to send email to ${recipients.join(', ')}:`, error);
+      return { success: false, error: 'EMAIL_DELIVERY_FAILED', message: error.message || 'Resend could not deliver the email.' };
     }
     console.log(`✅ [RESEND] Email sent to: ${recipients.join(', ')}`);
-    return { success: true };
+    return { success: true, data };
   } catch (err) {
-    console.error(`❌ [RESEND EXCEPTION] Failed to send email to ${to}:`, err.message);
-    return { success: false, error: err.message };
+    console.error(`❌ [RESEND EXCEPTION] Failed to send email to ${to}:`, err);
+    return { success: false, error: 'EMAIL_DELIVERY_FAILED', message: err.message || 'Resend could not deliver the email.' };
   }
+}
+
+async function sendPasswordChangedEmail(email) {
+  return sendEmail({
+    to: email,
+    subject: 'Your Match District password was changed',
+    html: '<div style="font-family:sans-serif;max-width:600px;margin:auto;padding:20px"><h2>Your password was changed</h2><p>The password for your account was recently changed.</p><p>If you did not make this change, reset your password and contact support immediately.</p></div>',
+    text: 'Your password was changed\n\nThe password for your account was recently changed.\n\nIf you did not make this change, reset your password and contact support immediately.'
+  });
 }
 
 // Helper: remove a recently uploaded ImageKit file if its database transaction fails.
@@ -970,6 +1000,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const supabaseAdmin = SUPABASE_SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   : null;
+if (!supabaseAdmin) {
+  console.error('[AUTH CONFIG] SUPABASE_SERVICE_ROLE_KEY is missing. Verified-email registration cannot create Supabase Auth users.');
+}
 
 // The shared module is the sole PostgreSQL pool factory; it reads DATABASE_URL only.
 const pool = createDatabasePool();
@@ -979,7 +1012,7 @@ pool.on('error', (err) => {
 
 async function ensureSupabaseProfile(client, user, onStep) {
   if (!user || !(user.uid || user.id) || !user.email) return;
-  const profileValues = [user.uid || user.id, user.uid || null, user.name || null, user.email, user.gamerTag || user['gamerTag'] || null,
+  const profileValues = [user.uid || user.id, user.uid || null, user.name || null, user.email,
   user.role || 'gamer', user.roles || ['user'], user.tier || 'Amateur', user.avatar || null, user.banner || null,
   user.phone || null, user.status || 'Active', user.riotId || user['riotId'] || null, user.bgmiId || user['bgmiId'] || null,
   user.steamId || user['steamId'] || null, user.discordTag || user['discordTag'] || null,
@@ -987,34 +1020,44 @@ async function ensureSupabaseProfile(client, user, onStep) {
   user.orgMotto || user['orgMotto'] || null, user.orgHandle || user['orgHandle'] || null,
   user.orgImage || user['orgImage'] || null, user.orgBio || user['orgBio'] || null];
 
-  // Only enrich the same profile when its email still matches. Never copy the
-  // incoming identity over another profile that already owns this email.
-  onStep?.('update_profile_gamertag');
-  await client.query(
-    `UPDATE profiles
-     SET "gamerTag" = COALESCE(profiles."gamerTag", $5)
-     WHERE id = $1 AND email = $4`,
-    profileValues.slice(0, 5)
-  );
-
   onStep?.('profile_insert');
   const insertResult = await client.query(
-    `INSERT INTO profiles (id, uid, name, email, "gamerTag", role, roles, tier, avatar, banner, phone, status,
+    `INSERT INTO profiles (id, uid, name, email, role, roles, tier, avatar, banner, phone, status,
                           "riotId", "bgmiId", "steamId", "discordTag", "socialLinks", "orgName", "orgMotto", "orgHandle", "orgImage", "orgBio")
-     SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
-     WHERE NOT EXISTS (SELECT 1 FROM profiles WHERE email = $4 AND id <> $1)
+     SELECT $1::text, $2::text, $3::text, $4::text, $5::text, $6::text[], $7::text, $8::text, $9::text,
+            $10::text, $11::text, $12::text, $13::text, $14::text, $15::text, $16::text, $17::text,
+            $18::text, $19::text, $20::text, $21::text
+     WHERE NOT EXISTS (SELECT 1 FROM profiles WHERE email = $4::text AND id <> $1::text)
      ON CONFLICT DO NOTHING
      RETURNING id`,
     profileValues
   );
   if (insertResult.rowCount === 0) {
     const conflict = await client.query(
-      'SELECT EXISTS (SELECT 1 FROM profiles WHERE email = $1 AND id <> $2) AS email_conflict',
+      'SELECT EXISTS (SELECT 1 FROM profiles WHERE email = $1::text AND id <> $2::text) AS email_conflict',
       [user.email, user.uid || user.id]
     );
     if (conflict.rows[0]?.email_conflict) {
       console.warn('[PROFILE] Profile creation skipped because the email is already assigned to a different profile ID. Existing accounts were left unchanged.');
+      if (onStep) {
+        const error = new Error('An account with this email already exists. Sign in or use a different email.');
+        error.code = 'EMAIL_ALREADY_REGISTERED';
+        throw error;
+      }
     }
+  }
+}
+
+async function findSupabaseAuthUserByEmail(email) {
+  if (!supabaseAdmin) throw new Error('Supabase service role key is not configured on this server.');
+  const perPage = 1000;
+  for (let page = 1; ; page += 1) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    const users = data?.users || [];
+    const match = users.find((user) => String(user.email || '').trim().toLowerCase() === email);
+    if (match) return match;
+    if (users.length < perPage) return null;
   }
 }
 
@@ -1209,9 +1252,11 @@ async function initDb() {
         UPDATE tournament_matches m
         SET district_id = COALESCE(g.district_id, g.id)
         FROM tournament_groups g
-        LEFT JOIN tournament_rooms r ON r.id = m.room_id
         WHERE m.district_id IS NULL
-          AND g.id = COALESCE(m.group_id, r.group_id)
+          AND g.id = COALESCE(
+            m.group_id,
+            (SELECT r.group_id FROM tournament_rooms r WHERE r.id = m.room_id)
+          )
       `);
       if (backfillRes.rowCount > 0) {
         console.log(`📦 [MATCH DISTRICT DB] Backfilled district_id for ${backfillRes.rowCount} legacy match(es).`);
@@ -2451,6 +2496,13 @@ const server = http.createServer(async (req, res) => {
           });
           const emailSent = emailResult.success;
 
+          if (!emailSent) {
+            await pool.query('DELETE FROM otps WHERE email = $1::text AND otp = $2::text', [email, otp]).catch(() => {});
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: emailResult.error, message: emailResult.message || 'Could not deliver the verification code. Please try again shortly.' }));
+            return;
+          }
+
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, emailSent, expiry }));
         } catch (err) {
@@ -2753,6 +2805,7 @@ const server = http.createServer(async (req, res) => {
             html: `<div style="font-family:sans-serif;max-width:600px;margin:auto;padding:20px"><h2>Sign in to Match District</h2><p>Your login code is:</p><p style="font-size:32px;font-weight:bold;letter-spacing:6px">${code}</p><p>This code expires in 10 minutes. If you did not request it, ignore this email.</p></div>`
           });
           if (!sent.success) {
+            await pool.query('DELETE FROM login_otp_challenges WHERE user_id = $1::text AND code_hash = $2::text', [account.id, codeHash]).catch(() => {});
             res.writeHead(503, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: false, error: 'EMAIL_DELIVERY_FAILED', message: 'Could not deliver the login code. Please try again shortly.' }));
             return;
@@ -2921,11 +2974,11 @@ const server = http.createServer(async (req, res) => {
             try {
               await registrationClient.query('BEGIN');
               foundUser = await insertWithDistrictId((districtId) => registrationClient.query(
-                `INSERT INTO users (id, uid, name, email, password, "gamerTag", role, roles, tier, "orgApplicationStatus", district_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                `INSERT INTO users (id, uid, name, email, password, role, roles, tier, "orgApplicationStatus", district_id)
+               VALUES ($1::text, $2::text, $3::text, $4::text, $5::text, $6::text, $7::text[], $8::text, $9::text, $10::text)
                ON CONFLICT (district_id) DO NOTHING RETURNING *`,
                 [authData.user.id, authData.user.id, email.split('@')[0], email, 'REDACTED',
-                '@' + email.split('@')[0], 'player', ['user'], 'Amateur', 'none', districtId]
+                'player', ['user'], 'Amateur', 'none', districtId]
               ));
               await ensureSupabaseProfile(registrationClient, foundUser);
               const profileCheck = await registrationClient.query(
@@ -3142,8 +3195,6 @@ const server = http.createServer(async (req, res) => {
             // New User Registration with least-privileged participant defaults
             const userUUID = 'USR-' + crypto.randomBytes(12).toString('hex');
             const cleanName = (googlePayload.name || googleEmail.split('@')[0]).trim().slice(0, 50);
-            const gamerTag = cleanName;
-
             const avatarUrl = sanitizeImageUrlForDb(googlePayload.picture) || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=500&q=80';
 
             const registrationClient = await pool.connect();
@@ -3171,11 +3222,11 @@ const server = http.createServer(async (req, res) => {
               for (let attempt = 0; attempt < 8 && !targetUser; attempt += 1) {
                 const districtId = generateDistrictId();
                 const insertRes = await registrationClient.query(
-                  `INSERT INTO users (id, uid, name, email, password, "gamerTag", role, roles, tier, "orgApplicationStatus", avatar, status, google_id, google_linked_at, password_set, district_id)
-                 VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), false, $13)
+                  `INSERT INTO users (id, uid, name, email, password, role, roles, tier, "orgApplicationStatus", avatar, status, google_id, google_linked_at, password_set, district_id)
+                 VALUES ($1::text, $2::text, $3::text, $4::text, NULL, $5::text, $6::text[], $7::text, $8::text, $9::text, $10::text, $11::text, NOW(), false, $12::text)
                  ON CONFLICT DO NOTHING
                  RETURNING *`,
-                  [userUUID, userUUID, cleanName, googleEmail, gamerTag, 'player', ['user'], 'Amateur', 'none', avatarUrl, 'Active', googleSub, districtId]
+                  [userUUID, userUUID, cleanName, googleEmail, 'player', ['user'], 'Amateur', 'none', avatarUrl, 'Active', googleSub, districtId]
                 );
                 targetUser = insertRes.rows[0] || null;
                 if (targetUser) {
@@ -3344,6 +3395,7 @@ const server = http.createServer(async (req, res) => {
           html: `<p>Your Match District account confirmation code is <strong>${code}</strong>.</p><p>It expires in 10 minutes. If you did not request this, ignore this message.</p>`
         });
         if (!emailResult.success) {
+          await pool.query('DELETE FROM auth_link_challenges WHERE user_id = $1::text AND code_hash = $2::text', [account.id, crypto.createHash('sha256').update(code).digest('hex')]).catch(() => {});
           res.writeHead(503, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'EMAIL_UNAVAILABLE', message: 'We could not send a code right now. Try password confirmation or try again later.' }));
           return;
@@ -4436,20 +4488,19 @@ const server = http.createServer(async (req, res) => {
 
             const userId = 'USR-' + crypto.randomBytes(12).toString('hex');
             const cleanName = (discordGlobalName || discordUsername || 'Player').trim().slice(0, 50);
-            const gamerTag = cleanName;
             const dbClient = await pool.connect();
             try {
               await dbClient.query('BEGIN');
               targetUser = await insertWithDistrictId((districtId) => dbClient.query(
-                `INSERT INTO users (id, uid, name, email, password, "gamerTag", role, roles, tier, "orgApplicationStatus", avatar, status, discord_id, password_set, district_id)
-               VALUES ($1, $1, $2, $3, NULL, $4, 'player', ARRAY['user'], 'Amateur', 'none', NULL, 'Active', $5, false, $6)
+                `INSERT INTO users (id, uid, name, email, password, role, roles, tier, "orgApplicationStatus", avatar, status, discord_id, password_set, district_id)
+               VALUES ($1::text, $1::text, $2::text, $3::text, NULL, 'player', ARRAY['user'], 'Amateur', 'none', NULL, 'Active', $4::text, false, $5::text)
                ON CONFLICT (district_id) DO NOTHING RETURNING *`,
-                [userId, cleanName, discordEmail, gamerTag, discordId, districtId]
+                [userId, cleanName, discordEmail, discordId, districtId]
               ));
               await dbClient.query(
-                `INSERT INTO profiles (id, uid, name, email, "gamerTag", role, roles, tier, status, "discordTag")
-               VALUES ($1, $1, $2, $3, $4, 'player', ARRAY['user'], 'Amateur', 'Active', $5)`,
-                [userId, cleanName, discordEmail, gamerTag, discordUsername]
+                `INSERT INTO profiles (id, uid, name, email, role, roles, tier, status, "discordTag")
+               VALUES ($1::text, $1::text, $2::text, $3::text, 'player', ARRAY['user'], 'Amateur', 'Active', $4::text)`,
+                [userId, cleanName, discordEmail, discordUsername]
               );
               await dbClient.query(
                 `INSERT INTO user_discord_connections (user_id, discord_id, username, global_name, avatar_hash, connected_at, updated_at)
@@ -4960,11 +5011,11 @@ const server = http.createServer(async (req, res) => {
 
           registrationTempStep = 'temporary_registration_insert';
           await pool.query(
-            `INSERT INTO temp_users (email, name, password, "gamerTag", role, verified, verification_token, expires_at)
-           VALUES ($1, $2, $3, $4, $5, false, NULL, $6)
+            `INSERT INTO temp_users (email, name, password, role, verified, verification_token, expires_at)
+           VALUES ($1, $2, $3, $4, false, NULL, $5)
            ON CONFLICT (email)
-           DO UPDATE SET name = $2, password = $3, "gamerTag" = $4, role = $5, verified = false, verification_token = NULL, expires_at = $6, created_at = CURRENT_TIMESTAMP`,
-            [email, userData.name || '', hashedPassword, userData.gamerTag || '', 'player', expiresAt]
+           DO UPDATE SET name = $2, password = $3, role = $4, verified = false, verification_token = NULL, expires_at = $5, created_at = CURRENT_TIMESTAMP`,
+            [email, userData.name || '', hashedPassword, 'player', expiresAt]
           );
 
           console.log(`📦 [MATCH DISTRICT TEMP REGISTER] Temporary registration details saved for: ${email}`);
@@ -5008,7 +5059,8 @@ const server = http.createServer(async (req, res) => {
         const errorRef = makeErrorRef();
         let registrationStep = 'parse_request';
         let userUUID = null;
-        let createdSupabaseAuthUser = false;
+        let authUserForCleanup = false;
+        let reusedSupabaseAuthUser = false;
         let accountTransactionCommitted = false;
         try {
           const { email: rawEmail, password, verificationToken } = JSON.parse(body);
@@ -5091,46 +5143,60 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
-          // Register user in Supabase Auth
-          let isLocalFallback = false;
-          const registerPassword = password || ('MatchDistrictTempPass' + crypto.randomBytes(6).toString('hex'));
-
-          registrationStep = 'create_supabase_auth_user';
-          try {
-            const { data: authData, error: authError } = await supabase.auth.signUp({
-              email: tempUser.email,
-              password: registerPassword
-            });
-
-            if (authError || !authData || !authData.user) {
-              if (authError) console.warn(`[AUTH REGISTER] Supabase Auth signup returned an error [Ref:${errorRef}]:`, authError);
-              isLocalFallback = true;
-            } else {
-              userUUID = authData.user.id;
-              createdSupabaseAuthUser = true;
-            }
-          } catch (signUpErr) {
-            console.warn(`[AUTH REGISTER] Supabase Auth signup unavailable; using the configured local account fallback [Ref:${errorRef}].`, signUpErr);
-            isLocalFallback = true;
+          // This server has already verified this email with its own OTP, so
+          // create a confirmed Auth user through the service-role admin API.
+          if (!supabaseAdmin) {
+            registrationStep = 'supabase_service_role_configuration';
+            const configError = new Error('SUPABASE_SERVICE_ROLE_KEY is not configured on the server.');
+            logFullError(errorRef, 'POST /api/auth/register', registrationStep, configError);
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'AUTH_CONFIGURATION_ERROR', message: 'Registration is temporarily unavailable because the account service is not configured.' }));
+            return;
           }
-
-          if (isLocalFallback) {
-            // Check if already in users table
-            registrationStep = 'check_existing_public_account';
-            const checkUser = await pool.query('SELECT * FROM users WHERE email = $1', [tempUser.email]);
-            if (checkUser.rows.length > 0) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
+          const registerPassword = password || ('MatchDistrictTempPass' + crypto.randomBytes(6).toString('hex'));
+          registrationStep = 'create_supabase_auth_user';
+          const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+            email,
+            email_confirm: true,
+            password: registerPassword
+          });
+          if (authError) {
+            // A previous failed attempt may have left an Auth identity without
+            // a public user/profile. Reuse it only after confirming that state.
+            registrationStep = 'find_incomplete_supabase_auth_user';
+            const existingAuthUser = await findSupabaseAuthUserByEmail(email);
+            if (!existingAuthUser) throw authError;
+            registrationStep = 'confirm_incomplete_supabase_auth_user';
+            const completedAccount = await pool.query(
+              `SELECT 1 FROM users WHERE LOWER(BTRIM(email)) = $1::text
+               UNION ALL
+               SELECT 1 FROM profiles WHERE LOWER(BTRIM(email)) = $1::text
+               LIMIT 1`, [email]
+            );
+            if (completedAccount.rows.length > 0) {
+              res.writeHead(409, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ success: false, error: 'EMAIL_ALREADY_REGISTERED', message: 'An account with this email already exists. Sign in or use a different email.' }));
               return;
             }
-            userUUID = 'USR-' + crypto.randomBytes(12).toString('hex');
+            userUUID = existingAuthUser.id;
+            authUserForCleanup = true;
+            reusedSupabaseAuthUser = true;
+            registrationStep = 'reuse_incomplete_supabase_auth_user';
+            const { data: updatedAuthUser, error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(userUUID, {
+              password: registerPassword,
+              email_confirm: true
+            });
+            if (updateAuthError) throw updateAuthError;
+            if (!updatedAuthUser?.user) throw new Error('Supabase did not return the reused Auth user.');
+          } else {
+            if (!authData?.user) throw new Error('Supabase did not return the created Auth user.');
+            userUUID = authData.user.id;
+            authUserForCleanup = true;
           }
 
           const defaultRole = 'player';
           const defaultRoles = ['user'];
           const defaultStatus = 'Active';
-          const defaultGamerTag = tempUser.gamerTag || ('@' + (tempUser.name || tempUser.email.split('@')[0]).toLowerCase().replace(/\s+/g, '_'));
-
           let newUser = null;
           let token = null;
           let sessionCookie = null;
@@ -5142,11 +5208,11 @@ const server = http.createServer(async (req, res) => {
             newUser = await insertWithDistrictId((districtId) => {
               registrationStep = 'users_insert';
               return registrationClient.query(
-                `INSERT INTO users (id, uid, name, email, password, "gamerTag", role, roles, tier, "orgApplicationStatus", avatar, status, district_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                `INSERT INTO users (id, uid, name, email, password, role, roles, tier, "orgApplicationStatus", avatar, status, district_id)
+               VALUES ($1::text, $2::text, $3::text, $4::text, $5::text, $6::text, $7::text[], $8::text, $9::text, $10::text, $11::text, $12::text)
                ON CONFLICT (district_id) DO NOTHING RETURNING *`,
                 [userUUID, userUUID, tempUser.name || '', tempUser.email, tempUser.password,
-                  defaultGamerTag, defaultRole, defaultRoles, 'Amateur', 'none',
+                  defaultRole, defaultRoles, 'Amateur', 'none',
                   'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=500&q=80',
                   defaultStatus, districtId]
               );
@@ -5179,11 +5245,13 @@ const server = http.createServer(async (req, res) => {
               .catch((err) => logFullError(errorRef, 'POST /api/auth/register', 'post_commit_terms_acceptance_log', err));
           } catch (dbErr) {
             await registrationClient.query('ROLLBACK').catch(() => { });
-            const duplicateEmail = dbErr.code === '23505' && /email/i.test(dbErr.constraint || '');
+            const duplicateEmail = dbErr.code === 'EMAIL_ALREADY_REGISTERED'
+              || (dbErr.code === '23505' && /email/i.test(dbErr.constraint || ''));
             logFullError(errorRef, 'POST /api/auth/register', registrationStep, dbErr);
-            if (createdSupabaseAuthUser && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userUUID || '')) {
+            if (authUserForCleanup && userUUID && !(reusedSupabaseAuthUser && duplicateEmail)) {
               try {
-                await pool.query('DELETE FROM auth.users WHERE id = $1::uuid', [userUUID]);
+                const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(userUUID);
+                if (deleteAuthError) throw deleteAuthError;
               } catch (cleanupErr) {
                 logFullError(errorRef, 'POST /api/auth/register', 'supabase_auth_rollback_cleanup', cleanupErr);
               }
@@ -5214,9 +5282,10 @@ const server = http.createServer(async (req, res) => {
           res.end(JSON.stringify({ success: true, token, user: safeUser }));
         } catch (err) {
           logFullError(errorRef, 'POST /api/auth/register', registrationStep, err);
-          if (!accountTransactionCommitted && createdSupabaseAuthUser && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userUUID || '')) {
+          if (!accountTransactionCommitted && authUserForCleanup && userUUID && supabaseAdmin) {
             try {
-              await pool.query('DELETE FROM auth.users WHERE id = $1::uuid', [userUUID]);
+              const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(userUUID);
+              if (deleteAuthError) throw deleteAuthError;
             } catch (cleanupErr) {
               logFullError(errorRef, 'POST /api/auth/register', 'supabase_auth_rollback_cleanup', cleanupErr);
             }
@@ -5277,6 +5346,7 @@ const server = http.createServer(async (req, res) => {
             }
           }
 
+          await sendPasswordChangedEmail(email);
           console.log(`🔑 [MATCH DISTRICT AUTH] Password reset successfully via token for user: ${email}`);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, message: 'Password reset successful.' }));
@@ -5397,6 +5467,7 @@ const server = http.createServer(async (req, res) => {
             }
           }
 
+          await sendPasswordChangedEmail(dbUser.email);
           console.log(`🔑 [MATCH DISTRICT AUTH] Password ${hasExistingPassword ? 'changed' : 'created'} successfully for user: ${dbUser.email}`);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
@@ -5441,44 +5512,50 @@ const server = http.createServer(async (req, res) => {
           if (!(await accountSecurity.guardSend(req, res, { flow: 'password_reset', email: cleanEmail }))) return;
 
           // Check if user exists in database (generic response to prevent user enumeration - AUTH-006)
-          const userRes = await pool.query('SELECT id FROM users WHERE email = $1::text', [cleanEmail]);
+          const userRes = await pool.query('SELECT id, name FROM users WHERE LOWER(BTRIM(email)) = $1::text', [cleanEmail]);
           if (userRes.rows.length === 0) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, message: 'If an account exists with this email, a password reset link has been sent.' }));
+            res.end(JSON.stringify({ success: true, message: 'If an account exists with this email, a password reset code has been sent.' }));
             return;
           }
 
-          const token = crypto.randomBytes(32).toString('hex');
-          const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes expiry (AUTH-005)
+          const code = crypto.randomInt(100000, 1000000).toString();
+          const codeHash = crypto.createHmac('sha256', JWT_SECRET).update(`password-reset:${cleanEmail}:${code}`).digest('hex');
+          const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
           await pool.query(
             'INSERT INTO password_resets (email, token, expires_at) VALUES ($1::text, $2::text, $3::timestamptz) ON CONFLICT (email) DO UPDATE SET token = $2::text, expires_at = $3::timestamptz, created_at = CURRENT_TIMESTAMP',
-            [cleanEmail, token, expiresAt]
+            [cleanEmail, codeHash, expiresAt]
           );
 
-          const proto = req.headers['x-forwarded-proto'] || (process.env.NODE_ENV === 'production' ? 'https' : 'http');
-          const resetLink = `${proto}://${req.headers.host}/reset-password?token=${token}`;
-          await sendEmail({
+          const emailResult = await sendEmail({
             to: cleanEmail,
             subject: 'Reset Your Match District Password',
             html: `
               <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 5px;">
                 <h2 style="color: #333; text-align: center;">Reset Your Password</h2>
                 <p>Hello,</p>
-                <p>You requested a password reset for your Match District account. Please use the link below to set a new password:</p>
-                <div style="text-align: center; margin: 30px 0;">
-                  <a href="${resetLink}" style="background-color: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Reset Password</a>
+                <p>You requested a password reset for your Match District account. Enter this verification code to set a new password:</p>
+                <div style="background-color: #f4f4f4; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #000; margin: 20px 0; border-radius: 4px;">
+                  ${code}
                 </div>
-                <p>This link is valid for <strong>1 hour</strong>.</p>
+                <p>This code is valid for <strong>10 minutes</strong>.</p>
                 <p>If you didn't request this, you can safely ignore this email.</p>
                 <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
                 <p style="font-size: 12px; color: #888; text-align: center;">&copy; 2026 Match District. All rights reserved.</p>
               </div>
-            `
+            `,
+            text: `Reset Your Password\n\nYou requested a password reset for your Match District account. Enter this verification code to set a new password:\n\n${code}\n\nThis code is valid for 10 minutes. If you didn't request this, you can safely ignore this email.\n\n© 2026 Match District. All rights reserved.`
           });
+          if (!emailResult.success) {
+            await pool.query('DELETE FROM password_resets WHERE email = $1::text AND token = $2::text', [cleanEmail, codeHash]);
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: emailResult.error, message: emailResult.message || 'Could not deliver the reset code. Please try again shortly.' }));
+            return;
+          }
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, message: 'Password reset link sent.' }));
+          res.end(JSON.stringify({ success: true, message: 'Password reset code sent.' }));
         } catch (err) {
           const ref = makeErrorRef();
           logErrorWithRef(ref, 'POST /api/auth/forgot-password-link', err);
@@ -5494,65 +5571,101 @@ const server = http.createServer(async (req, res) => {
       let body = '';
       req.on('data', chunk => { body += chunk; });
       req.on('end', async () => {
+        const errorRef = makeErrorRef();
+        let resetStep = 'parse_request';
+        let client = null;
         try {
-          const { token, password } = JSON.parse(body);
-          if (!token || !password) {
+          const { token, email: rawEmail, code: rawCode, password } = JSON.parse(body || '{}');
+          let email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
+          const code = typeof rawCode === 'string' ? rawCode.trim() : '';
+          if ((!token && (!email || !/^\d{6}$/.test(code))) || typeof password !== 'string') {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'Token and password are required.' }));
+            res.end(JSON.stringify({ success: false, error: 'INVALID_INPUT', message: 'Enter your email, the 6-digit reset code, and a new password.' }));
             return;
           }
-
-          if (!(await accountSecurity.guardVerify(req, res, { email: null }))) return;
-
-          const now = new Date();
-          const resetRes = await pool.query(
-            'SELECT * FROM password_resets WHERE token = $1 AND expires_at > $2',
-            [token, now]
-          );
-
-          if (resetRes.rows.length === 0) {
-            if (await accountSecurity.recordFailure(req, res, { flow: 'password_reset', email: null })) return;
+          if (password.length < 6 || !/[A-Za-z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'Invalid or expired reset token.' }));
+            res.end(JSON.stringify({ success: false, error: 'WEAK_PASSWORD', message: 'Password must be at least 6 characters and include a letter, a number, and a symbol.' }));
             return;
           }
 
-          const email = resetRes.rows[0].email;
-          accountSecurity.clearFailures(req, { flow: 'password_reset', email });
-
-          const hashedPassword = hashPassword(password);
-          // Update password in database
-          const dbRes = await pool.query(
-            'UPDATE users SET password = $1, password_set = true WHERE email = $2 RETURNING *',
-            [hashedPassword, email]
-          );
-
-          if (dbRes.rows.length === 0) {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'User associated with token not found.' }));
+          client = await pool.connect();
+          await client.query('BEGIN');
+          resetStep = 'password_reset_code_lookup';
+          const resetRes = token
+            ? await client.query('SELECT * FROM password_resets WHERE token = $1::text AND expires_at > NOW() FOR UPDATE', [token])
+            : await client.query('SELECT * FROM password_resets WHERE email = $1::text FOR UPDATE', [email]);
+          const resetRecord = resetRes.rows[0];
+          if (!resetRecord) {
+            await client.query('ROLLBACK');
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: token ? 'RESET_CODE_INVALID' : 'RESET_CODE_NOT_FOUND', message: token ? 'That reset link is invalid or expired. Request a new reset code.' : 'No active reset code was found. Request a new code.' }));
             return;
           }
-
-          const updatedUser = dbRes.rows[0];
-
-          // Delete reset token (inactive now)
-          await pool.query('DELETE FROM password_resets WHERE email = $1', [email]);
-
-          // Try to update in Supabase Auth if user has UUID
-          if (updatedUser.uid && !updatedUser.uid.startsWith('USR-')) {
-            try {
-              if (supabaseAdmin) await supabaseAdmin.auth.admin.updateUserById(updatedUser.uid, { password });
-            } catch (supErr) {
-              console.warn('⚠️ [RESET PASSWORD] Could not update Supabase Auth user password:', supErr.message);
+          email = String(resetRecord.email || email).trim().toLowerCase();
+          if (!(await accountSecurity.guardVerify(req, res, { email }))) {
+            await client.query('ROLLBACK');
+            return;
+          }
+          if (new Date(resetRecord.expires_at) <= new Date()) {
+            resetStep = 'expired_password_reset_cleanup';
+            await client.query('DELETE FROM password_resets WHERE email = $1::text', [email]);
+            await client.query('COMMIT');
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'RESET_CODE_EXPIRED', message: 'That reset code has expired. Request a new code.' }));
+            return;
+          }
+          if (!token) {
+            resetStep = 'password_reset_code_compare';
+            const candidateHash = crypto.createHmac('sha256', JWT_SECRET).update(`password-reset:${email}:${code}`).digest();
+            const storedHash = Buffer.from(resetRecord.token, 'hex');
+            if (storedHash.length !== candidateHash.length || !crypto.timingSafeEqual(candidateHash, storedHash)) {
+              await client.query('ROLLBACK');
+              if (await accountSecurity.recordFailure(req, res, { flow: 'password_reset', email })) {
+                await pool.query('DELETE FROM password_resets WHERE email = $1::text', [email]).catch(() => {});
+                return;
+              }
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, error: 'RESET_CODE_INVALID', message: 'That reset code is incorrect. Check it and try again.' }));
+              return;
             }
           }
 
-          console.log(`🔑 [MATCH DISTRICT AUTH] Password updated successfully via reset token for user: ${email}`);
+          resetStep = 'password_reset_user_lookup';
+          const userRes = await client.query('SELECT * FROM users WHERE LOWER(BTRIM(email)) = $1::text LIMIT 1', [email]);
+          const user = userRes.rows[0];
+          if (!user) {
+            await client.query('ROLLBACK');
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'USER_NOT_FOUND', message: 'The account for this reset code could not be found.' }));
+            return;
+          }
+
+          resetStep = 'supabase_password_update';
+          if (user.uid && !String(user.uid).startsWith('USR-') && !String(user.uid).startsWith('ADM-')) {
+            if (!supabaseAdmin) throw new Error('Supabase service role key is not configured; the account password cannot be updated.');
+            const { error: authUpdateError } = await supabaseAdmin.auth.admin.updateUserById(user.uid, { password });
+            if (authUpdateError) throw authUpdateError;
+          }
+
+          resetStep = 'local_password_update';
+          const hashedPassword = hashPassword(password);
+          await client.query('UPDATE users SET password = $1::text, password_set = true WHERE id = $2::text', [hashedPassword, user.id]);
+          resetStep = 'consume_password_reset_code';
+          await client.query('DELETE FROM password_resets WHERE email = $1::text', [email]);
+          await client.query('COMMIT');
+          accountSecurity.clearFailures(req, { flow: 'password_reset', email });
+          await sendPasswordChangedEmail(email);
+          console.log(`🔑 [MATCH DISTRICT AUTH] Password reset successfully via Resend code for user: ${email}`);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, message: 'Password updated successfully.' }));
         } catch (err) {
+          await client?.query('ROLLBACK').catch(() => {});
+          logFullError(errorRef, 'POST /api/auth/reset-password-token', resetStep, err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, error: err.message }));
+          res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: 'Password reset could not be completed because of a server error. Please try again.' }));
+        } finally {
+          client?.release();
         }
       });
       return;

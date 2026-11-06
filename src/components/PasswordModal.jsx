@@ -64,13 +64,14 @@ export default function PasswordModal({
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
         const masked = maskEmail(currentUser.email);
-        setForgotMessage(`We sent a reset link to ${masked}`);
-        triggerToast?.(`Password reset link sent to ${masked}`);
+        setForgotMessage(`We sent a reset code to ${masked}`);
+        triggerToast?.(`Password reset code sent to ${masked}`);
+        window.location.assign(`/reset-password?reset=code&email=${encodeURIComponent(currentUser.email)}`);
       } else {
-        setError(data.message || 'Could not send reset link. Please try again.');
+        setError(data.message || 'Could not send reset code. Please try again.');
       }
     } catch {
-      setError('Could not send reset link. Please try again.');
+      setError('Could not send reset code. Please try again.');
     } finally {
       setForgotLoading(false);
     }

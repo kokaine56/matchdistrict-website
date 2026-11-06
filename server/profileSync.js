@@ -7,26 +7,26 @@ export async function syncMissingProfiles(client) {
   try {
     const result = await client.query(`
       WITH candidates AS MATERIALIZED (
-        SELECT uid, name, email, "gamerTag", role, roles, tier, avatar, banner, phone, status,
+        SELECT uid, name, email, role, roles, tier, avatar, banner, phone, status,
                "riotId", "bgmiId", "steamId", "discordTag", "socialLinks", "orgName", "orgMotto", "orgHandle", "orgImage", "orgBio"
         FROM users
         WHERE uid IS NOT NULL AND uid NOT LIKE 'ADM-%'
       ),
       email_conflicts AS (
-        SELECT candidates.uid
+        SELECT candidates.uid, candidates.email
         FROM candidates
         JOIN profiles existing ON existing.email = candidates.email AND existing.id <> candidates.uid
         UNION
-        SELECT candidate.uid
+        SELECT candidate.uid, candidate.email
         FROM candidates candidate
         JOIN (
           SELECT email FROM candidates GROUP BY email HAVING COUNT(*) > 1
         ) duplicate_source_emails ON duplicate_source_emails.email = candidate.email
       ),
       inserted AS (
-        INSERT INTO profiles (id, uid, name, email, "gamerTag", role, roles, tier, avatar, banner, phone, status,
+        INSERT INTO profiles (id, uid, name, email, role, roles, tier, avatar, banner, phone, status,
                               "riotId", "bgmiId", "steamId", "discordTag", "socialLinks", "orgName", "orgMotto", "orgHandle", "orgImage", "orgBio")
-        SELECT candidates.uid, candidates.uid, candidates.name, candidates.email, candidates."gamerTag",
+        SELECT candidates.uid, candidates.uid, candidates.name, candidates.email,
                candidates.role, candidates.roles, candidates.tier, candidates.avatar, candidates.banner, candidates.phone,
                candidates.status, candidates."riotId", candidates."bgmiId", candidates."steamId", candidates."discordTag",
                candidates."socialLinks", candidates."orgName", candidates."orgMotto", candidates."orgHandle", candidates."orgImage", candidates."orgBio"
@@ -41,12 +41,13 @@ export async function syncMissingProfiles(client) {
       )
       SELECT
         (SELECT COUNT(*)::int FROM email_conflicts) AS email_conflicts_skipped,
+        (SELECT COALESCE(array_agg(DISTINCT email::text ORDER BY email::text), ARRAY[]::text[]) FROM email_conflicts) AS conflicting_emails,
         (SELECT COUNT(*)::int FROM inserted) AS profiles_inserted
     `);
 
-    const { email_conflicts_skipped: conflicts = 0, profiles_inserted: inserted = 0 } = result.rows[0] || {};
+    const { email_conflicts_skipped: conflicts = 0, conflicting_emails: conflictingEmails = [], profiles_inserted: inserted = 0 } = result.rows[0] || {};
     if (conflicts > 0) {
-      console.warn(`[STARTUP] Profile sync skipped ${conflicts} user record(s) because the email is already assigned to a different profile ID. Existing accounts were left unchanged.`);
+      console.warn(`[STARTUP] Profile sync skipped ${conflicts} user record(s) because the email is already assigned to a different profile ID. Conflicting email(s): ${conflictingEmails.join(', ')}. Existing accounts were left unchanged.`);
     }
     console.log(`[STARTUP] Profile sync complete: ${inserted} inserted, ${conflicts} email conflict(s) skipped.`);
     return { inserted, conflicts };

@@ -217,6 +217,7 @@ export async function runSchemaMigrations(clientOrPool) {
       -- These are optional identity/profile attributes. Legacy NOT NULL flags
       -- must not block account creation when the signup form does not collect them.
       ALTER TABLE users ALTER COLUMN username DROP NOT NULL;
+      ALTER TABLE users ALTER COLUMN "gamerTag" DROP NOT NULL;
       ALTER TABLE users ALTER COLUMN "riotId" DROP NOT NULL;
       ALTER TABLE users ALTER COLUMN "bgmiId" DROP NOT NULL;
       ALTER TABLE users ALTER COLUMN "steamId" DROP NOT NULL;
@@ -319,6 +320,7 @@ export async function runSchemaMigrations(clientOrPool) {
       );
       ALTER TABLE temp_users ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT false;
       ALTER TABLE temp_users ADD COLUMN IF NOT EXISTS verification_token VARCHAR(255);
+      ALTER TABLE temp_users ALTER COLUMN "gamerTag" DROP NOT NULL;
       ALTER TABLE otps ADD COLUMN IF NOT EXISTS attempts INTEGER DEFAULT 0;
 
       CREATE TABLE IF NOT EXISTS registration_cooldowns (
@@ -1708,6 +1710,7 @@ export async function runSchemaMigrations(clientOrPool) {
 
       ALTER TABLE profiles ADD COLUMN IF NOT EXISTS username VARCHAR(32);
       ALTER TABLE profiles ALTER COLUMN username DROP NOT NULL;
+      ALTER TABLE profiles ALTER COLUMN "gamerTag" DROP NOT NULL;
       -- Signup does not collect these optional game/provider identifiers.
       -- Clear legacy NOT NULL flags without changing any existing profile data.
       ALTER TABLE profiles ALTER COLUMN "riotId" DROP NOT NULL;
