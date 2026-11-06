@@ -337,6 +337,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
   const [otpExpiry, setOtpExpiry] = useState(null)
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', ''])
   const [otpSent, setOtpSent] = useState(false)
+  const [otpError, setOtpError] = useState('')
 
   function triggerToast(msg) {
     setToastMessage(msg)
@@ -705,8 +706,6 @@ function Auth({ onNavigate, initialMode = 'login' }) {
 
   // Common OTP sending utility (used for registration)
   const sendOtp = async (email) => {
-    const expiry = Date.now() + 10 * 60 * 1000 // 10 minutes
-    
     const res = await fetch('/api/auth/send-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -719,11 +718,22 @@ function Auth({ onNavigate, initialMode = 'login' }) {
         status: res.status,
         message: data.message || 'Failed to send OTP',
         error: data.error,
-        secondsLeft: data.secondsLeft || 180
+        secondsLeft: data.secondsLeft || data.retry_after_seconds || 0
       }
     }
-    
-    return { otp, expiry, emailSent: data.emailSent !== false }
+
+    return { expiry: data.expiry, emailSent: data.emailSent !== false }
+  }
+
+  const getActiveRegistrationOtp = async (email) => {
+    const res = await fetch('/api/auth/registration-otp-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.message || 'Could not check for an active verification code.')
+    return data
   }
 
   // --- Real-time Validation Rules & Helper ---
@@ -1080,21 +1090,33 @@ function Auth({ onNavigate, initialMode = 'login' }) {
       if (res.ok && data.success) {
         setIsFormEditedSinceLastSubmit(false)
         setOtpDigits(['', '', '', '', '', ''])
+        setOtpError('')
         
         // Auto-request OTP code immediately on registration submit
         try {
           const { expiry, emailSent } = await sendOtp(regForm.email)
           setOtpExpiry(expiry)
           setOtpSent(true)
-          startCooldown(180)
+          startCooldown(60)
           if (emailSent === false) {
-            triggerToast('Verification code could not be delivered by email. Please check your connection.')
+            setOtpError('The code was created, but the email could not be delivered. Check the email address or resend the code.')
           }
         } catch (otpErr) {
-          if (otpErr.error === 'TOO_MANY_REQUESTS' && otpErr.secondsLeft) {
+          setOtpError(otpErr.message || 'Could not send the verification code. Please try again.')
+          if (otpErr.secondsLeft) {
             startCooldown(otpErr.secondsLeft)
           }
-          triggerToast(otpErr.message || 'OTP limit hit. Please request manually.')
+          try {
+            const activeOtp = await getActiveRegistrationOtp(regForm.email)
+            if (activeOtp.active) {
+              setOtpSent(true)
+              setOtpExpiry(new Date(activeOtp.expiresAt).getTime())
+              startCooldown(activeOtp.resendAfterSeconds || otpErr.secondsLeft || 0)
+              setOtpError(otpErr.message || '')
+            }
+          } catch (statusErr) {
+            setOtpError(`${otpErr.message || 'Could not send the verification code.'} ${statusErr.message}`)
+          }
         }
 
         setDirection(0)
@@ -1120,13 +1142,25 @@ function Auth({ onNavigate, initialMode = 'login' }) {
       setOtpExpiry(expiry)
       setOtpDigits(['', '', '', '', '', ''])
       setOtpSent(true)
-      startCooldown(180)
+      setOtpError('')
+      startCooldown(60)
       if (emailSent === false) {
-        triggerToast('Verification code could not be delivered by email. Please check your connection.')
+        setOtpError('The code was created, but the email could not be delivered. Check the email address or resend the code.')
       }
     } catch (err) {
-      if (err.error === 'TOO_MANY_REQUESTS' && err.secondsLeft) {
+      setOtpError(err.message || 'Could not send the verification code. Please try again.')
+      if (err.secondsLeft) {
         startCooldown(err.secondsLeft)
+      }
+      try {
+        const activeOtp = await getActiveRegistrationOtp(regForm.email)
+        if (activeOtp.active) {
+          setOtpSent(true)
+          setOtpExpiry(new Date(activeOtp.expiresAt).getTime())
+          startCooldown(activeOtp.resendAfterSeconds || err.secondsLeft || 0)
+        }
+      } catch (statusErr) {
+        setOtpError(`${err.message || 'Could not send the verification code.'} ${statusErr.message}`)
       }
     } finally {
       setIsLoading(false)
@@ -1152,9 +1186,10 @@ function Auth({ onNavigate, initialMode = 'login' }) {
 
       if (!verifyRes.ok || !verifyData.success) {
         setIsLoading(false)
-        triggerToast(verifyData.message || (verifyData.error === 'OTP_NOT_FOUND' ? 'No active verification code found. Please request a new code.' : verifyData.error === 'OTP_EXPIRED' ? 'Your verification code expired. Please request a new one.' : verifyData.error === 'TOO_MANY_ATTEMPTS' ? 'Too many incorrect attempts. Please request a new code.' : verifyData.error === 'INVALID_OTP' ? 'That code is incorrect. Check it and try again.' : 'Could not verify that code. Please try again.'))
+        setOtpError(verifyData.message || (verifyData.error === 'OTP_NOT_FOUND' ? 'No active verification code found. Please request a new code.' : verifyData.error === 'OTP_EXPIRED' ? 'Your verification code expired. Please request a new one.' : verifyData.error === 'TOO_MANY_ATTEMPTS' ? 'Too many incorrect attempts. Please request a new code.' : verifyData.error === 'INVALID_OTP' ? 'That code is incorrect. Check it and try again.' : 'Could not verify that code. Please try again.'))
         return
       }
+      setOtpError('')
 
       // Complete registration on the server using temp details
       const res = await fetch('/api/auth/register', {
@@ -1201,7 +1236,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
       }
     } catch (err) {
       setIsLoading(false)
-      triggerToast('Verification failed. Check connection.')
+      setOtpError(err.message || 'Verification failed. Check your connection.')
     }
   }
 
@@ -1217,12 +1252,14 @@ function Auth({ onNavigate, initialMode = 'login' }) {
       const { expiry, emailSent } = await sendOtp(targetEmail)
       setOtpExpiry(expiry)
       setOtpDigits(['', '', '', '', '', ''])
-      startCooldown(180)
+      startCooldown(60)
+      setOtpError('')
       if (emailSent === false) {
-        triggerToast('Verification code could not be delivered by email. Please check your connection.')
+        setOtpError('The code was created, but the email could not be delivered. Check the email address or resend the code.')
       }
     } catch (err) {
-      if (err.error === 'TOO_MANY_REQUESTS' && err.secondsLeft) {
+      setOtpError(err.message || 'Could not resend the verification code. Please try again.')
+      if (err.secondsLeft) {
         startCooldown(err.secondsLeft)
       }
     } finally {
@@ -1675,8 +1712,14 @@ function Auth({ onNavigate, initialMode = 'login' }) {
                       <ConfirmIdentityOTP
                         email={regForm.email}
                         onVerify={handleOtpVerification}
+                        onResend={handleResendOtp}
+                        cooldownSeconds={Math.max(cooldownSeconds, regSpamCooldownSeconds)}
+                        isLoading={isLoading}
+                        error={otpError}
                         onBack={() => {
                           setShowOtpModal(false)
+                          setOtpSent(false)
+                          setOtpError('')
                           if (!isFormEditedSinceLastSubmit) {
                             setBackWithoutEditCount(prev => prev + 1)
                           }
@@ -1687,6 +1730,7 @@ function Auth({ onNavigate, initialMode = 'login' }) {
                         <div className="text-center py-4">
                           <p className="font-body-sm text-sm text-slate-900 dark:text-white font-bold">{regForm.email}</p>
                         </div>
+                        {otpError && <p className="text-red-500 text-xs font-semibold" role="alert">{otpError}</p>}
                         <button
                           type="button"
                           onClick={handleRequestOtp}

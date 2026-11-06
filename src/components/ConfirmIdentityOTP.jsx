@@ -1,18 +1,31 @@
-import React, { useState, useRef } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { ArrowLeft } from 'lucide-react'
 
-export const ConfirmIdentityOTP = ({ email, onVerify, onBack }) => {
+export const ConfirmIdentityOTP = ({ email, onVerify, onResend, onBack, cooldownSeconds = 0, isLoading = false, error = '' }) => {
   const [otp, setOtp] = useState(['', '', '', '', '', ''])
   const inputRefs = useRef([])
 
+  useEffect(() => {
+    inputRefs.current[0]?.focus()
+  }, [])
+
   const handleChange = (index, value) => {
-    if (isNaN(value)) return
     const newOtp = [...otp]
-    newOtp[index] = value
+    const digits = value.replace(/\D/g, '')
+    if (digits.length > 1) {
+      const pasted = digits.slice(0, 6).split('')
+      pasted.forEach((digit, offset) => {
+        if (index + offset < newOtp.length) newOtp[index + offset] = digit
+      })
+      setOtp(newOtp)
+      inputRefs.current[Math.min(index + pasted.length, 5)]?.focus()
+      return
+    }
+    newOtp[index] = digits
     setOtp(newOtp)
 
-    if (value !== '' && index < 5) {
-      inputRefs.current[index + 1].focus()
+    if (digits !== '' && index < 5) {
+      inputRefs.current[index + 1]?.focus()
     }
   }
 
@@ -20,6 +33,16 @@ export const ConfirmIdentityOTP = ({ email, onVerify, onBack }) => {
     if (e.key === 'Backspace' && index > 0 && otp[index] === '') {
       inputRefs.current[index - 1].focus()
     }
+  }
+
+  const handlePaste = (e) => {
+    const digits = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
+    if (!digits) return
+    e.preventDefault()
+    const newOtp = [...otp]
+    digits.split('').forEach((digit, index) => { newOtp[index] = digit })
+    setOtp(newOtp)
+    inputRefs.current[Math.min(digits.length, 5)]?.focus()
   }
 
   return (
@@ -38,6 +61,7 @@ export const ConfirmIdentityOTP = ({ email, onVerify, onBack }) => {
             value={digit}
             onChange={(e) => handleChange(index, e.target.value)}
             onKeyDown={(e) => handleKeyDown(index, e)}
+            onPaste={handlePaste}
             className="w-10 h-12 sm:w-14 sm:h-16 p-0 text-xl sm:text-2xl font-bold text-center text-slate-900 transition-all bg-white border rounded-xl sm:rounded-2xl shrink-0 border-indigo-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             inputMode="numeric"
             pattern="[0-9]*"
@@ -46,21 +70,27 @@ export const ConfirmIdentityOTP = ({ email, onVerify, onBack }) => {
         ))}
       </div>
 
+      {error && <p className="w-full text-left text-red-500 text-xs font-semibold mt-3" role="alert">{error}</p>}
+
       <button
+        type="button"
         onClick={() => onVerify(otp.join(''))}
-        className="w-full py-3.5 mt-8 text-sm font-bold text-white transition-all shadow-md bg-indigo-600 rounded-xl hover:bg-indigo-700 hover:shadow-lg flex items-center justify-center gap-2"
+        disabled={otp.join('').length !== 6 || isLoading}
+        className="w-full py-3.5 mt-8 text-sm font-bold text-white transition-all shadow-md bg-indigo-600 rounded-xl hover:bg-indigo-700 hover:shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
       >
-        <span>Verify Code &amp; Join</span>
+        <span>{isLoading ? 'Verifying...' : 'Verify Code &amp; Join'}</span>
       </button>
 
       <div className="flex flex-col items-center mt-6 gap-4">
         <p className="text-xs text-on-surface-variant">
-          No receipt?{' '}
+          {cooldownSeconds > 0 ? `Resend code in ${Math.floor(cooldownSeconds / 60)}:${String(cooldownSeconds % 60).padStart(2, '0')}` : 'No receipt?'}{' '}
           <button
             type="button"
+            onClick={onResend}
+            disabled={cooldownSeconds > 0 || isLoading}
             className="text-primary font-bold hover:underline underline-offset-4"
           >
-            Resend Code
+            Resend code
           </button>
         </p>
         <button
@@ -68,7 +98,7 @@ export const ConfirmIdentityOTP = ({ email, onVerify, onBack }) => {
           onClick={onBack}
           className="flex items-center text-xs font-bold text-on-surface-variant/60 hover:text-primary transition-colors"
         >
-          <ArrowLeft className="w-4 h-4 mr-1.5" /> Back to Registration
+          <ArrowLeft className="w-4 h-4 mr-1.5" /> Change email
         </button>
       </div>
     </div>

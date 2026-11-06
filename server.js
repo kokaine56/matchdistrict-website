@@ -2446,6 +2446,48 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // Registration step recovery: report an active code without exposing the code itself.
+    if (req.url === '/api/auth/registration-otp-status' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        try {
+          const parsed = JSON.parse(body);
+          const email = (parsed.email || '').trim().toLowerCase();
+          if (!email || !email.includes('@')) {
+            res.writeHead(400, { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' });
+            res.end(JSON.stringify({ success: false, error: 'INVALID_EMAIL', message: 'A valid email address is required.' }));
+            return;
+          }
+          const result = await pool.query(
+            `SELECT o.expires_at, o.created_at
+               FROM otps o
+               JOIN temp_users t ON LOWER(BTRIM(t.email)) = LOWER(BTRIM(o.email))
+              WHERE LOWER(BTRIM(o.email)) = $1 AND o.expires_at > NOW()
+                AND COALESCE(o.attempts, 0) < 5 AND t.expires_at > NOW()
+                AND t.verified = false
+              LIMIT 1`,
+            [email]
+          );
+          const record = result.rows[0];
+          const resendAfterSeconds = record
+            ? Math.max(0, 60 - Math.floor((Date.now() - new Date(record.created_at).getTime()) / 1000))
+            : 0;
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' });
+          res.end(JSON.stringify({
+            success: true,
+            active: Boolean(record),
+            expiresAt: record?.expires_at || null,
+            resendAfterSeconds,
+          }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' });
+          res.end(JSON.stringify({ success: false, error: 'OTP_STATUS_UNAVAILABLE', message: 'Could not check the verification code. Please request a new one.' }));
+        }
+      });
+      return;
+    }
+
     // 1b. OTP Verification Service
     if (req.url === '/api/auth/verify-otp' && req.method === 'POST') {
       let body = '';
