@@ -1417,6 +1417,157 @@ export default function AdminDashboard({ onNavigate }) {
         </div>
       )}
 
+      {/* Platform Earning Percentage Configure Modal */}
+      {isCommissionModalOpen && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn"
+          onClick={() => { if (!commissionSaving) setIsCommissionModalOpen(false) }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-outline-variant/30 bg-white dark:bg-[#111827] p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/10">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 shrink-0">
+                  <span className="material-symbols-outlined text-xl">percent</span>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Configure Platform Earnings</h3>
+                  <p className="text-[11px] text-slate-500 dark:text-white/40">Set the commission rate for tournament entries</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCommissionModalOpen(false)}
+                disabled={commissionSaving}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all cursor-pointer disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Current Active Rate */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/60 dark:border-white/5">
+                <span className="text-xs font-semibold text-slate-600 dark:text-white/60">Current Platform Rate</span>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold font-mono border border-emerald-500/20">
+                  {financials.platformFeePercentage}%
+                </span>
+              </div>
+
+              {/* Preset buttons */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-white/70 mb-2">
+                  Quick Presets
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[5, 8, 10, 15].map((preset) => {
+                    const isSelected = Number(commissionInput) === preset
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setCommissionInput(String(preset))}
+                        disabled={commissionSaving}
+                        className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer disabled:opacity-50 ${
+                          isSelected
+                            ? 'bg-primary text-white border-primary shadow-sm'
+                            : 'border-slate-200 dark:border-white/10 hover:border-primary/50 text-slate-700 dark:text-white/80 bg-slate-50 dark:bg-white/[0.02]'
+                        }`}
+                      >
+                        {preset}%
+                        {preset === 10 && <span className="block text-[9px] font-normal opacity-80">(Default)</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Editable percentage input */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-white/70 mb-1.5">
+                  Platform Earning Percentage (0% – 100%)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    disabled={commissionSaving}
+                    value={commissionInput}
+                    onChange={(e) => setCommissionInput(e.target.value)}
+                    placeholder="Enter percentage (e.g. 10)"
+                    className="w-full h-11 px-3.5 pr-8 rounded-xl border border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-surface text-slate-900 dark:text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm disabled:opacity-50"
+                  />
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 pointer-events-none">%</span>
+                </div>
+                {(commissionInput !== '' && (Number(commissionInput) < 0 || Number(commissionInput) > 100 || isNaN(Number(commissionInput)))) ? (
+                  <p className="text-[11px] text-rose-500 mt-1 font-medium">Percentage must be between 0% and 100%.</p>
+                ) : null}
+              </div>
+
+              {/* Dynamic Revenue Preview */}
+              <div className="p-3.5 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] space-y-1">
+                <div className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
+                  <span>Calculation Preview</span>
+                  <span className="font-mono font-bold">{commissionInput !== '' ? commissionInput : financials.platformFeePercentage}%</span>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-white/50">
+                  On a ₹10,000 tournament pool, platform receives{' '}
+                  <strong className="text-slate-900 dark:text-white">
+                    ₹{Math.round(10000 * ((Number(commissionInput !== '' ? commissionInput : financials.platformFeePercentage) || 0) / 100)).toLocaleString('en-IN')}
+                  </strong>.
+                </p>
+                <p className="text-[10px] text-slate-500 dark:text-white/40 italic">
+                  Historical tournaments and transactions retain their original commission rates.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100 dark:border-white/10">
+              <button
+                type="button"
+                onClick={() => setIsCommissionModalOpen(false)}
+                disabled={commissionSaving}
+                className="px-4 py-2 min-h-[40px] rounded-xl border border-slate-200 dark:border-white/10 text-xs font-semibold text-slate-600 dark:text-white/70 hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const targetVal = commissionInput !== '' ? commissionInput : financials.platformFeePercentage
+                  const ok = await handleSaveCommission(targetVal)
+                  if (ok) setIsCommissionModalOpen(false)
+                }}
+                disabled={
+                  commissionSaving ||
+                  commissionInput === '' ||
+                  isNaN(Number(commissionInput)) ||
+                  Number(commissionInput) < 0 ||
+                  Number(commissionInput) > 100
+                }
+                className="px-5 py-2 min-h-[40px] rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold shadow-md transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+              >
+                {commissionSaving ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-sm">save</span>
+                    <span>Save Changes</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </AdminLayout>
 
     </>
@@ -2173,139 +2324,6 @@ function RegistrationManager({
                 className="px-4 py-2 text-xs font-bold text-slate-700 dark:text-white bg-slate-100 dark:bg-white/10 rounded-lg hover:bg-slate-200 dark:hover:bg-white/20 transition-colors"
               >
                 Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Platform Earning Percentage Configure Modal */}
-      {isCommissionModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn"
-          onClick={() => { if (!commissionSaving) setIsCommissionModalOpen(false) }}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-outline-variant/30 bg-white dark:bg-[#111827] p-6 shadow-2xl space-y-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/10">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10">
-                  <span className="material-symbols-outlined text-lg">percent</span>
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Configure Platform Earning Rate</h3>
-                  <p className="text-[11px] text-slate-500 dark:text-white/40">Adjust commission percentage for future tournaments</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCommissionModalOpen(false)}
-                disabled={commissionSaving}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-white/70 mb-2">
-                  Select Preset Percentage
-                </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[5, 8, 10, 15].map((preset) => {
-                    const isSelected = Number(commissionInput) === preset
-                    return (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => setCommissionInput(String(preset))}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-primary text-white border-primary shadow-sm'
-                            : 'border-slate-200 dark:border-white/10 hover:border-primary/50 text-slate-700 dark:text-white/80 bg-slate-50 dark:bg-white/[0.02]'
-                        }`}
-                      >
-                        {preset}%
-                        {preset === 10 && <span className="block text-[9px] font-normal opacity-80">(Default)</span>}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-white/70 mb-1.5">
-                  Or Enter Custom Percentage (0% – 100%)
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={commissionInput}
-                    onChange={(e) => setCommissionInput(e.target.value)}
-                    placeholder="Enter percentage (e.g. 12.5)"
-                    className="w-full h-11 px-3.5 pr-8 rounded-xl border border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-surface text-slate-900 dark:text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
-                  />
-                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 pointer-events-none">%</span>
-                </div>
-                {Number(commissionInput) < 0 || Number(commissionInput) > 100 ? (
-                  <p className="text-[11px] text-rose-500 mt-1">Percentage must be between 0 and 100%.</p>
-                ) : null}
-              </div>
-
-              {/* Dynamic Revenue Preview */}
-              <div className="p-3.5 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] space-y-1">
-                <div className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
-                  <span>Calculation Preview</span>
-                  <span className="font-mono font-bold">{commissionInput || 0}%</span>
-                </div>
-                <p className="text-[11px] text-slate-600 dark:text-white/50">
-                  On a ₹10,000 tournament pool, the platform receives{' '}
-                  <strong className="text-slate-900 dark:text-white">
-                    ₹{Math.round(10000 * ((Number(commissionInput) || 0) / 100)).toLocaleString('en-IN')}
-                  </strong>
-                  .
-                </p>
-                <p className="text-[10px] text-slate-500 dark:text-white/40 italic">
-                  Note: Historical tournaments and transactions will preserve their original commission rates.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-white/10">
-              <button
-                type="button"
-                onClick={() => setIsCommissionModalOpen(false)}
-                disabled={commissionSaving}
-                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-white/10 text-xs font-semibold text-slate-600 dark:text-white/70 hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const ok = await handleSaveCommission(commissionInput)
-                  if (ok) setIsCommissionModalOpen(false)
-                }}
-                disabled={commissionSaving || commissionInput === '' || Number(commissionInput) < 0 || Number(commissionInput) > 100}
-                className="px-5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold shadow-md transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-              >
-                {commissionSaving ? (
-                  <>
-                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                    <span>Saving...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-sm">save</span>
-                    <span>Save Changes</span>
-                  </>
-                )}
               </button>
             </div>
           </div>
