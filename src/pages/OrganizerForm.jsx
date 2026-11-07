@@ -356,7 +356,16 @@ function OrganizerForm({ onNavigate }) {
       }),
       discordLink: form.discord || 'N/A',
       additionalNotes: `Tagline: ${form.orgTagline} | Description: ${form.orgDescription} | Formats: ${(form.formats || []).join(', ')} | Participants: ${form.expectedParticipants || 'N/A'} | Prize: ${form.prizePool || 'N/A'}`,
-      kycDoc: `Doc Type: ${form.idType || 'N/A'} | File: ${form.kycImage || 'N/A'}`,
+      kycDoc: JSON.stringify({
+        idType: form.idType || 'N/A',
+        fileName: form.kycName || 'KYC Document',
+        fileUrl: form.kycImage || '',
+        documents: form.kycImage ? [{
+          idType: form.idType || 'N/A',
+          fileName: form.kycName || 'KYC Document',
+          fileUrl: form.kycImage
+        }] : []
+      }),
       portfolio: form.orgBanner || '',
       selectedPlan: 'Free',
     };
@@ -451,12 +460,15 @@ function OrganizerForm({ onNavigate }) {
     if (!isValid) return;
     setIsUploadingKyc(true);
     try {
-      const url = await uploadImage(file);
+      const url = await uploadImage(file, { purpose: 'kyc-document' });
       if (url) {
         updateForm('kycImage', url);
         updateForm('kycName', file.name);
       }
-    } catch {}
+    } catch (err) {
+      console.error('KYC document upload error:', err);
+      alert(err.message || 'Failed to upload document. Please ensure the file is a valid PDF or image.');
+    }
     setIsUploadingKyc(false);
   };
 

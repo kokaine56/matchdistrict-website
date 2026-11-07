@@ -462,6 +462,7 @@ export async function runSchemaMigrations(clientOrPool) {
         submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         reviewed_at TIMESTAMP
       );
+      ALTER TABLE organizer_applications ALTER COLUMN "kycDoc" TYPE TEXT;
 
       CREATE TABLE IF NOT EXISTS organizer_drafts (
         id VARCHAR(50) PRIMARY KEY,
@@ -522,6 +523,7 @@ export async function runSchemaMigrations(clientOrPool) {
         submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         reviewed_at TIMESTAMP
       );
+      ALTER TABLE organizer_applications ALTER COLUMN "kycDoc" TYPE TEXT;
     `);
 
     // 3. Tournaments, registrations, registration sessions, and payments

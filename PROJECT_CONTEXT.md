@@ -99,7 +99,7 @@ matchdistrict-website/
   * `/api/tournaments/*`: CRUD operations, registration submissions, roadmap retrieval, slot status.
   * `/api/roadmap/*`: Draft creation, automated distribution calculation, manual slot reordering, publication.
   * `/api/organizer/*`: Applications, profile updates, follower counts, branding.
-  * `/api/admin/*`: Organizer verification approvals, manual UTR review, subscription upgrades, dynamic financials (`/api/admin/financials`).
+  * `/api/admin/*`: Organizer verification approvals, manual UTR review, subscription upgrades, dynamic financials (`/api/admin/financials`), secure KYC document proxy (`/api/admin/kyc/document`).
   * `/api/settings/*`: Site configuration settings (`/api/settings/theme`, `/api/settings/platform-fee` for dynamic platform commission percentage with admin authorization and audit logging).
   * `/api/integrations/*`: Discord bot communication, organizer verification code generation.
 

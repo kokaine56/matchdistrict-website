@@ -353,6 +353,11 @@ function isValidImageBuffer(buffer) {
   return false;
 }
 
+function isValidPdfBuffer(buffer) {
+  return Buffer.isBuffer(buffer) && buffer.length >= 4 &&
+    buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46; // %PDF
+}
+
 const UNLINK_COOLDOWN_DAYS = 14;
 const UNLINK_COOLDOWN_MS = UNLINK_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
 
@@ -2405,7 +2410,7 @@ const server = http.createServer(async (req, res) => {
             } catch { }
           }
 
-          const dataUrlMatch = data.file.match(/^data:(image\/(?:jpeg|jpg|png|gif|webp|heic|heif|avif));base64,([\s\S]*)$/i);
+          const dataUrlMatch = data.file.match(/^data:(image\/(?:jpeg|jpg|png|gif|webp|heic|heif|avif)|application\/pdf);base64,([\s\S]*)$/i);
           if (isTournamentQrUpload && (!dataUrlMatch || !['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(dataUrlMatch[1].toLowerCase()))) {
             console.error(`[${uploadContext}] QR storage upload rejected: unsupported image content type.`);
             res.writeHead(415, { 'Content-Type': 'application/json' });
@@ -2447,17 +2452,24 @@ const server = http.createServer(async (req, res) => {
           if (rawBuffer && rawBuffer.length > maxImageBytes) {
             if (isTournamentQrUpload) console.error(`[${uploadContext}] QR storage upload rejected: ${rawBuffer.length} bytes exceeds 5 MB.`);
             res.writeHead(413, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'PAYLOAD_TOO_LARGE', message: isTournamentQrUpload ? 'QR image must be 5 MB or smaller.' : 'Image must be 10 MB or smaller.' }));
+            res.end(JSON.stringify({ success: false, error: 'PAYLOAD_TOO_LARGE', message: isTournamentQrUpload ? 'QR image must be 5 MB or smaller.' : 'File must be 10 MB or smaller.' }));
             return;
           }
 
-          if (rawBuffer && !isValidImageBuffer(rawBuffer)) {
+          const isPdf = mimeType === 'application/pdf';
+          if (rawBuffer && !isPdf && !isValidImageBuffer(rawBuffer)) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'INVALID_IMAGE_TYPE', message: 'Invalid image format. Allowed formats: PNG, JPEG, GIF, WEBP.' }));
+            res.end(JSON.stringify({ success: false, error: 'INVALID_IMAGE_TYPE', message: 'Invalid image format. Allowed formats: PNG, JPEG, GIF, WEBP, PDF.' }));
+            return;
+          }
+          if (rawBuffer && isPdf && !isValidPdfBuffer(rawBuffer)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'INVALID_FILE_TYPE', message: 'Invalid PDF document.' }));
             return;
           }
 
-          const extension = mimeType === 'image/png' ? 'png'
+          const extension = isPdf ? 'pdf'
+            : mimeType === 'image/png' ? 'png'
             : mimeType === 'image/gif' ? 'gif'
               : mimeType === 'image/webp' ? 'webp'
                 : mimeType === 'image/heic' ? 'heic'
@@ -6394,6 +6406,202 @@ const server = http.createServer(async (req, res) => {
         console.warn('⚠️ [MATCH DISTRICT DB] Supabase fetch applications failed:', err.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+      return;
+    }
+
+    // Secure Admin KYC Document Proxy & Stream Endpoint
+    if (req.url.startsWith('/api/admin/kyc/document') && req.method === 'GET') {
+      try {
+        const parsedUrl = new URL(req.url, 'http://localhost');
+        let authUser = getAuthUser(req);
+        if (!authUser && parsedUrl.searchParams.get('token')) {
+          const tokenRes = verifyJwt(parsedUrl.searchParams.get('token'));
+          if (tokenRes?.valid) authUser = tokenRes.payload;
+        }
+
+        if (!authUser || !hasRole(authUser, ROLES.ADMIN)) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'FORBIDDEN', message: 'Only authorized admins can access KYC verification documents.' }));
+          return;
+        }
+
+        const appId = parsedUrl.searchParams.get('appId') || parsedUrl.searchParams.get('id');
+        if (!appId) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'MISSING_APP_ID', message: 'Application ID is required.' }));
+          return;
+        }
+
+        const dbRes = await pool.query(
+          'SELECT id, "applicantName", "orgName", "kycDoc", "orgImage" FROM organizer_applications WHERE id = $1 LIMIT 1',
+          [appId]
+        );
+
+        if (dbRes.rows.length === 0) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'NOT_FOUND', message: 'Organizer application not found.' }));
+          return;
+        }
+
+        const app = dbRes.rows[0];
+        const rawKyc = app.kycDoc || '';
+        const docIndex = parseInt(parsedUrl.searchParams.get('docIndex') || '0', 10) || 0;
+        const isDownload = parsedUrl.searchParams.get('download') === '1' || parsedUrl.searchParams.get('download') === 'true';
+
+        // Extract documents list
+        const extractedDocs = [];
+
+        // Try parsing JSON format
+        if (typeof rawKyc === 'string' && (rawKyc.trim().startsWith('{') || rawKyc.trim().startsWith('['))) {
+          try {
+            const parsed = JSON.parse(rawKyc);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((d, i) => {
+                if (typeof d === 'string') extractedDocs.push({ url: d, name: `Document ${i + 1}` });
+                else if (d?.fileUrl || d?.url) extractedDocs.push({ url: d.fileUrl || d.url, name: d.fileName || d.name || `Document ${i + 1}`, idType: d.idType });
+              });
+            } else if (parsed && typeof parsed === 'object') {
+              if (Array.isArray(parsed.documents) && parsed.documents.length > 0) {
+                parsed.documents.forEach((d, i) => {
+                  extractedDocs.push({ url: d.fileUrl || d.url || d, name: d.fileName || d.name || `Document ${i + 1}`, idType: d.idType || parsed.idType });
+                });
+              } else if (parsed.fileUrl || parsed.url) {
+                extractedDocs.push({ url: parsed.fileUrl || parsed.url, name: parsed.fileName || parsed.name || 'Document', idType: parsed.idType });
+              }
+            }
+          } catch { }
+        }
+
+        // If not extracted via JSON, parse string patterns
+        if (extractedDocs.length === 0 && typeof rawKyc === 'string' && rawKyc.trim()) {
+          const fileMatch = rawKyc.match(/File:\s*([^\s|,]+)/i);
+          const typeMatch = rawKyc.match(/Doc Type:\s*([^|]+)/i);
+          if (fileMatch && fileMatch[1] && fileMatch[1] !== 'N/A' && fileMatch[1] !== 'null') {
+            extractedDocs.push({
+              url: fileMatch[1].trim(),
+              name: 'KYC Document',
+              idType: typeMatch ? typeMatch[1].trim() : 'ID Proof'
+            });
+          } else if (rawKyc.startsWith('http://') || rawKyc.startsWith('https://') || rawKyc.startsWith('data:')) {
+            extractedDocs.push({ url: rawKyc.trim(), name: 'KYC Document', idType: 'ID Proof' });
+          }
+        }
+
+        if (extractedDocs.length === 0) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'NO_DOCUMENT', message: 'No valid KYC document uploaded for this application.' }));
+          return;
+        }
+
+        const selectedDoc = extractedDocs[docIndex] || extractedDocs[0];
+        const targetUrl = selectedDoc.url;
+
+        // If it's a data URL, decode and serve directly
+        if (targetUrl.startsWith('data:')) {
+          const match = targetUrl.match(/^data:([^;]+);base64,([\s\S]*)$/);
+          if (!match) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'CORRUPTED_DOCUMENT', message: 'Invalid data URL format.' }));
+            return;
+          }
+          const mimeType = match[1];
+          const buffer = Buffer.from(match[2], 'base64');
+          const ext = mimeType === 'application/pdf' ? 'pdf' : (mimeType.split('/')[1] || 'bin');
+          const safeName = (selectedDoc.name || 'kyc-doc').replace(/[^a-zA-Z0-9_-]/g, '_');
+          const disposition = isDownload ? 'attachment' : 'inline';
+
+          res.writeHead(200, {
+            'Content-Type': mimeType,
+            'Content-Length': buffer.length,
+            'Content-Disposition': `${disposition}; filename="${safeName}.${ext}"`,
+            'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+          });
+          res.end(buffer);
+          return;
+        }
+
+        // Validate remote URL to avoid SSRF
+        let remoteUrl;
+        try {
+          remoteUrl = new URL(targetUrl);
+        } catch {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'INVALID_URL', message: 'Document storage URL is invalid.' }));
+          return;
+        }
+
+        if (remoteUrl.protocol !== 'https:' && remoteUrl.protocol !== 'http:') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'INVALID_PROTOCOL', message: 'Only HTTP/HTTPS URLs are supported.' }));
+          return;
+        }
+
+        const host = remoteUrl.hostname.toLowerCase();
+        if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal') ||
+            /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
+            /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) || /^169\.254\./.test(host) || host === '::1' || host.includes(':')) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'FORBIDDEN_HOST', message: 'Access to internal resources is denied.' }));
+          return;
+        }
+
+        // Fetch upstream document
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+
+        let upstreamRes;
+        try {
+          upstreamRes = await fetch(remoteUrl.href, { signal: controller.signal });
+        } catch (fetchErr) {
+          clearTimeout(timeout);
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'FETCH_ERROR', message: `Failed to fetch document: ${fetchErr.message}` }));
+          return;
+        }
+        clearTimeout(timeout);
+
+        if (!upstreamRes.ok) {
+          res.writeHead(upstreamRes.status || 502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'STORAGE_ERROR', message: `Storage provider returned status ${upstreamRes.status}` }));
+          return;
+        }
+
+        const arrayBuffer = await upstreamRes.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        let contentType = upstreamRes.headers.get('content-type') || 'application/octet-stream';
+
+        if (isValidPdfBuffer(buffer)) {
+          contentType = 'application/pdf';
+        } else if (isValidImageBuffer(buffer)) {
+          if (buffer[0] === 0x89 && buffer[1] === 0x50) contentType = 'image/png';
+          else if (buffer[0] === 0xFF && buffer[1] === 0xD8) contentType = 'image/jpeg';
+          else if (buffer[0] === 0x47 && buffer[1] === 0x49) contentType = 'image/gif';
+          else if (buffer.slice(8, 12).toString('ascii') === 'WEBP') contentType = 'image/webp';
+        }
+
+        const ext = contentType === 'application/pdf' ? 'pdf'
+          : contentType === 'image/png' ? 'png'
+          : contentType === 'image/jpeg' ? 'jpg'
+          : contentType === 'image/webp' ? 'webp'
+          : contentType === 'image/gif' ? 'gif'
+          : 'bin';
+
+        const safeOrgName = (app.orgName || app.applicantName || 'kyc').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const fileName = `kyc_${safeOrgName}_${docIndex + 1}.${ext}`;
+        const disposition = isDownload ? 'attachment' : 'inline';
+
+        res.writeHead(200, {
+          'Content-Type': contentType,
+          'Content-Length': buffer.length,
+          'Content-Disposition': `${disposition}; filename="${fileName}"`,
+          'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+        });
+        res.end(buffer);
+      } catch (err) {
+        console.error('Error serving KYC document:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'SERVER_ERROR', message: err.message }));
       }
       return;
     }
