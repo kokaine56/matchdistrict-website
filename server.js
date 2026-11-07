@@ -1963,6 +1963,20 @@ async function requireAdminFromDb(req, res, context = '') {
   }
 }
 
+// Fetch authoritative platform fee percentage from site_settings (default: 10)
+async function getPlatformFeePercentage(clientOrPool) {
+  try {
+    const res = await clientOrPool.query(`SELECT value FROM site_settings WHERE key = 'platform_fee_percentage' LIMIT 1`);
+    if (res.rows.length > 0) {
+      const val = parseFloat(res.rows[0].value);
+      if (!isNaN(val) && val >= 0 && val <= 100) return val;
+    }
+  } catch (err) {
+    console.warn('⚠️ [SETTINGS] Failed to read platform_fee_percentage:', err.message);
+  }
+  return 10;
+}
+
 // Shared projection for public tournament rows (listing + promoted section).
 // Computes sponsor revenue and the display prize string exactly once.
 function withTournamentDisplay(r) {
@@ -9181,6 +9195,7 @@ const server = http.createServer(async (req, res) => {
             const regOpen = t.registrationOpenDate || now.toISOString().slice(0, 16);
             const regClose = t.registrationCloseDate || new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
             const startDate = t.startDate || new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+            const activePlatformFee = await getPlatformFeePercentage(pool);
 
             const dbRes = await pool.query(
               `INSERT INTO tournaments (
@@ -9192,10 +9207,11 @@ const server = http.createServer(async (req, res) => {
               match_type, perspective, reserved_slots, entry_fee_amount, prize_pool_type, prize_pool_amount,
               prize_split_1st, prize_split_2nd, prize_split_3rd, prize_split_mvp, description, cover_image_url,
               lobby_start_time, mvp_enabled, mvp_amount, kill_reward_enabled, kill_reward_per_kill, prize_positions,
-              sponsors_enabled, max_slots_per_room, card_color, rounds_published, teams_per_group, teams_per_match, roadmap_image_url, is_free
+              sponsors_enabled, max_slots_per_room, card_color, rounds_published, teams_per_group, teams_per_match, roadmap_image_url, is_free,
+              platform_fee_percentage
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
               $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
-              $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60)
+              $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61)
             RETURNING *`,
               [
                 tournamentId, t.title, t.game, 'upcoming', 'bg-primary', 'UPCOMING', now.toISOString(),
@@ -9215,7 +9231,8 @@ const server = http.createServer(async (req, res) => {
                 t.prize_positions || '[]', t.sponsors_enabled || false, maxSlotsPerRoom,
                 t.card_color || 'white', coerceBool(t.rounds_published, true),
                 adminTeamsPerGroup, t.teams_per_match ? parseInt(t.teams_per_match) : 16, sanitizeImageUrlForDb(t.roadmap_image_url) || '',
-                isFree
+                isFree,
+                activePlatformFee
               ]
             );
             const createdTournament = dbRes.rows[0];
@@ -9337,6 +9354,7 @@ const server = http.createServer(async (req, res) => {
           const orgPrizeAmount = isFree ? 0 : (t.prize_pool_amount !== undefined ? parseInt(t.prize_pool_amount) : 0);
           const orgPrize = isFree ? '' : (orgPrizeAmount > 0 ? `₹${orgPrizeAmount.toLocaleString('en-IN')}` : (t.prize || ''));
           const orgEntry = (isFree || orgEntryFee === 0 || t.entry === '₹0' || t.entry === '0') ? 'Free' : (t.entry || (orgEntryFee > 0 ? `₹${orgEntryFee}` : 'Free'));
+          const orgPlatformFee = await getPlatformFeePercentage(pool);
 
           const dbRes = await pool.query(
             `INSERT INTO tournaments (
@@ -9347,9 +9365,10 @@ const server = http.createServer(async (req, res) => {
             match_type, perspective, reserved_slots, entry_fee_amount, prize_pool_type, prize_pool_amount,
             prize_split_1st, prize_split_2nd, prize_split_3rd, prize_split_mvp, description, cover_image_url, lobby_start_time,
             mvp_enabled, mvp_amount, kill_reward_enabled, kill_reward_per_kill, prize_positions, sponsors_enabled, max_slots_per_room,
-            unique_amount_suffix_enabled, card_color, rounds_published, teams_per_group, teams_per_match, roadmap_image_url, is_free
+            unique_amount_suffix_enabled, card_color, rounds_published, teams_per_group, teams_per_match, roadmap_image_url, is_free,
+            platform_fee_percentage
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31,
-            $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61)
+            $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62)
           ON CONFLICT (id) DO UPDATE SET
             status = COALESCE(EXCLUDED.status, tournaments.status),
             "isDraft" = COALESCE(EXCLUDED."isDraft", tournaments."isDraft"),
@@ -9374,7 +9393,8 @@ const server = http.createServer(async (req, res) => {
             teams_per_group = COALESCE(EXCLUDED.teams_per_group, tournaments.teams_per_group),
             teams_per_match = COALESCE(EXCLUDED.teams_per_match, tournaments.teams_per_match),
             roadmap_image_url = COALESCE(EXCLUDED.roadmap_image_url, tournaments.roadmap_image_url),
-            is_free = COALESCE(EXCLUDED.is_free, tournaments.is_free)
+            is_free = COALESCE(EXCLUDED.is_free, tournaments.is_free),
+            platform_fee_percentage = COALESCE(tournaments.platform_fee_percentage, EXCLUDED.platform_fee_percentage)
           RETURNING *`,
             [
               t.id || `TRN-${Date.now().toString(36).slice(-4)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
@@ -9437,7 +9457,8 @@ const server = http.createServer(async (req, res) => {
               orgTeamsPerGroup,
               t.teams_per_match ? parseInt(t.teams_per_match) : 16,
               sanitizeImageUrlForDb(t.roadmap_image_url) || '',
-              isFree
+              isFree,
+              orgPlatformFee
             ]
           );
           console.log(`\r\n📦 [MATCH DISTRICT DB] Tournament "${t.id}" created in Supabase PostgreSQL.\r\n`);
@@ -10596,7 +10617,7 @@ const server = http.createServer(async (req, res) => {
           prize_pool_amount, prize_split_1st, prize_split_2nd, prize_split_3rd,
           prize_split_mvp, description, cover_image_url, lobby_start_time,
           mvp_enabled, mvp_amount, kill_reward_enabled, kill_reward_per_kill,
-          prize_positions, sponsors_enabled, rounds_published
+          prize_positions, sponsors_enabled, rounds_published, platform_fee_percentage
         ) SELECT
           $1, title, game, 'draft', 'bg-primary', 'DRAFT', '', prize, entry, '0',
           false, "orgName", "orgLogo", "orgHandle", "orgMotto",
@@ -10607,7 +10628,7 @@ const server = http.createServer(async (req, res) => {
           prize_pool_amount, prize_split_1st, prize_split_2nd, prize_split_3rd,
           prize_split_mvp, description, cover_image_url, lobby_start_time,
           mvp_enabled, mvp_amount, kill_reward_enabled, kill_reward_per_kill,
-          prize_positions, sponsors_enabled, rounds_published
+          prize_positions, sponsors_enabled, rounds_published, COALESCE(platform_fee_percentage, 10)
         FROM tournaments WHERE id = $3 RETURNING *`,
           [newId, authUser.id, srcId]
         );
@@ -15417,6 +15438,20 @@ const server = http.createServer(async (req, res) => {
           let paymentRecord = null;
 
           if (isPaid && payload.screenshot_url) {
+            // Determine platform fee percentage for this tournament
+            let payFeePct = 10;
+            try {
+              const tFeeRes = await client.query('SELECT platform_fee_percentage FROM tournaments WHERE id = $1', [session.tournament_id]);
+              if (tFeeRes.rows.length > 0 && tFeeRes.rows[0].platform_fee_percentage != null) {
+                payFeePct = parseFloat(tFeeRes.rows[0].platform_fee_percentage);
+              } else {
+                payFeePct = await getPlatformFeePercentage(client);
+              }
+            } catch {
+              payFeePct = 10;
+            }
+            const payFeeAmt = parseFloat(((amountToPay * payFeePct) / 100).toFixed(2));
+
             // Check if payment submission already exists for this registration to avoid duplicate records
             const existingPayRes = await client.query(
               `SELECT id FROM payment_submissions WHERE registration_id = $1::varchar LIMIT 1`,
@@ -15429,18 +15464,20 @@ const server = http.createServer(async (req, res) => {
                 `UPDATE payment_submissions
                SET amount = $1::numeric, proof_url = $2::text, utr_number = $3::varchar, payment_app = $4::varchar,
                    payment_status = 'pending_admin_review', admin_notes = NULL, reviewed_by = NULL, reviewed_at = NULL,
+                   platform_fee_percentage = COALESCE(payment_submissions.platform_fee_percentage, $5::numeric),
+                   platform_fee_amount = COALESCE(payment_submissions.platform_fee_amount, $6::numeric),
                    updated_at = CURRENT_TIMESTAMP
-               WHERE id = $5::varchar`,
-                [amountToPay, payload.screenshot_url, payload.utr_number || null, normPaymentApp || 'other', payId]
+               WHERE id = $7::varchar`,
+                [amountToPay, payload.screenshot_url, payload.utr_number || null, normPaymentApp || 'other', payFeePct, payFeeAmt, payId]
               );
             } else {
               payId = 'PAY-' + Date.now().toString().slice(-6) + '-' + crypto.randomBytes(4).toString('hex');
               const payIdempKey = idempotencyKey ? 'PAY-' + idempotencyKey : null;
               await client.query(
-                `INSERT INTO payment_submissions (id, registration_id, tournament_id, user_id, amount, proof_url, utr_number, payment_app, payment_status, idempotency_key)
-               VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::numeric, $6::text, $7::varchar, $8::varchar, 'pending_admin_review', $9::varchar)`,
+                `INSERT INTO payment_submissions (id, registration_id, tournament_id, user_id, amount, proof_url, utr_number, payment_app, payment_status, idempotency_key, platform_fee_percentage, platform_fee_amount)
+               VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::numeric, $6::text, $7::varchar, $8::varchar, 'pending_admin_review', $9::varchar, $10::numeric, $11::numeric)`,
                 [payId, regId, session.tournament_id, authUser.id, amountToPay,
-                  payload.screenshot_url, payload.utr_number || null, normPaymentApp || 'other', payIdempKey]
+                  payload.screenshot_url, payload.utr_number || null, normPaymentApp || 'other', payIdempKey, payFeePct, payFeeAmt]
               );
             }
 
@@ -15930,21 +15967,38 @@ const server = http.createServer(async (req, res) => {
             [bodyData.transaction_id || null, normPutApp || 'other', bodyData.screenshot_url, regId]
           );
 
+          // Determine platform fee percentage for this tournament
+          let putFeePct = 10;
+          try {
+            const tFeeRes = await pool.query('SELECT platform_fee_percentage FROM tournaments WHERE id = $1', [tournamentId]);
+            if (tFeeRes.rows.length > 0 && tFeeRes.rows[0].platform_fee_percentage != null) {
+              putFeePct = parseFloat(tFeeRes.rows[0].platform_fee_percentage);
+            } else {
+              putFeePct = await getPlatformFeePercentage(pool);
+            }
+          } catch {
+            putFeePct = 10;
+          }
+          const putFeeAmt = parseFloat((((reg.amount_due || 0) * putFeePct) / 100).toFixed(2));
+
           // Update or insert payment_submissions
           if (reg.payment_id) {
             await pool.query(
               `UPDATE payment_submissions
              SET payment_status = 'pending_admin_review', proof_url = $1::text, utr_number = $2::varchar,
-                 payment_app = $3::varchar, admin_notes = NULL, reviewed_by = NULL, reviewed_at = NULL, updated_at = CURRENT_TIMESTAMP
-             WHERE id = $4::varchar`,
-              [bodyData.screenshot_url, bodyData.transaction_id || null, normPutApp || 'other', reg.payment_id]
+                 payment_app = $3::varchar, admin_notes = NULL, reviewed_by = NULL, reviewed_at = NULL,
+                 platform_fee_percentage = COALESCE(payment_submissions.platform_fee_percentage, $4::numeric),
+                 platform_fee_amount = COALESCE(payment_submissions.platform_fee_amount, $5::numeric),
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $6::varchar`,
+              [bodyData.screenshot_url, bodyData.transaction_id || null, normPutApp || 'other', putFeePct, putFeeAmt, reg.payment_id]
             );
           } else {
             const payId = 'PAY-' + Date.now().toString().slice(-6) + '-' + crypto.randomBytes(4).toString('hex');
             await pool.query(
-              `INSERT INTO payment_submissions (id, registration_id, tournament_id, user_id, amount, proof_url, utr_number, payment_app, payment_status)
-             VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::numeric, $6::text, $7::varchar, $8::varchar, 'pending_admin_review')`,
-              [payId, regId, tournamentId, authUser.id, reg.amount_due || 0, bodyData.screenshot_url, bodyData.transaction_id || null, normPutApp || 'other']
+              `INSERT INTO payment_submissions (id, registration_id, tournament_id, user_id, amount, proof_url, utr_number, payment_app, payment_status, platform_fee_percentage, platform_fee_amount)
+             VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::numeric, $6::text, $7::varchar, $8::varchar, 'pending_admin_review', $9::numeric, $10::numeric)`,
+              [payId, regId, tournamentId, authUser.id, reg.amount_due || 0, bodyData.screenshot_url, bodyData.transaction_id || null, normPutApp || 'other', putFeePct, putFeeAmt]
             );
             await pool.query('UPDATE tournament_registrations SET payment_id = $1::varchar WHERE id = $2::varchar', [payId, regId]);
           }
@@ -16956,6 +17010,19 @@ const server = http.createServer(async (req, res) => {
            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
             [fee.toString()]
           );
+
+          try {
+            const logId = 'LOG-' + crypto.randomBytes(6).toString('hex').toUpperCase();
+            await pool.query(
+              `INSERT INTO admin_action_log (id, admin_id, action, action_type, target_type, target_id, details, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
+              [logId, authUser.id, 'update_platform_fee', 'update_platform_fee', 'site_settings', 'platform_fee_percentage',
+               JSON.stringify({ newPercentage: fee, updatedBy: authUser.email || authUser.id })]
+            );
+          } catch (logErr) {
+            console.warn('⚠️ [ADMIN AUDIT] Failed to log platform fee update:', logErr.message);
+          }
+
           console.log(`💰 [SETTINGS] Platform fee updated to ${fee}% by admin ${authUser.email || authUser.id}`);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, percentage: fee, message: `Platform fee set to ${fee}% successfully.` }));
@@ -18300,11 +18367,13 @@ const server = http.createServer(async (req, res) => {
 
           await client.query('BEGIN');
 
+          const currentFeePct = await getPlatformFeePercentage(client);
+          const feeAmt = parseFloat(((Number(amount) * currentFeePct) / 100).toFixed(2));
           const txId = 'TXN-' + crypto.randomBytes(6).toString('hex').toUpperCase();
           await client.query(
-            `INSERT INTO wallet_transactions (id, user_id, description, type, amount, status) 
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-            [txId, userId, description, type, amount, status || 'Completed']
+            `INSERT INTO wallet_transactions (id, user_id, description, type, amount, status, platform_fee_percentage, platform_fee_amount) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [txId, userId, description, type, amount, status || 'Completed', currentFeePct, feeAmt]
           );
 
           // Update user balance if credit or debit
@@ -20661,13 +20730,12 @@ const server = http.createServer(async (req, res) => {
         }
 
         const tournamentsRes = await pool.query(
-          `SELECT t.id, t.prize, t.entry, COALESCE(rc.slots_filled, 0) AS "slotsFilled", t.status FROM tournaments t LEFT JOIN registered_tournament_team_counts rc ON rc.tournament_id = t.id WHERE t.status IN ('live', 'upcoming')`
+          `SELECT t.id, t.prize, t.entry, COALESCE(rc.slots_filled, 0) AS "slotsFilled", t.status, t.platform_fee_percentage FROM tournaments t LEFT JOIN registered_tournament_team_counts rc ON rc.tournament_id = t.id WHERE t.status IN ('live', 'upcoming')`
         );
 
-        // Fetch dynamic platform fee percentage
-        const feeRes = await pool.query(`SELECT value FROM site_settings WHERE key = 'platform_fee_percentage'`);
-        const platformFeePercentage = feeRes.rows.length > 0 ? parseFloat(feeRes.rows[0].value) : 10;
-        const commissionRate = platformFeePercentage / 100;
+        // Fetch dynamic platform fee percentage from site_settings (default: 10)
+        const platformFeePercentage = await getPlatformFeePercentage(pool);
+        const defaultCommissionRate = platformFeePercentage / 100;
 
         let totalPrizePools = 0;
         let totalAvailableCommission = 0;
@@ -20677,15 +20745,19 @@ const server = http.createServer(async (req, res) => {
           const prizeNum = parseInt(String(t.prize).replace(/[^0-9]/g, '')) || 0;
           const entryNum = parseInt(String(t.entry).replace(/[^0-9]/g, '')) || 0;
           const slots = parseInt(t.slotsFilled) || 0;
+          const tRate = (t.platform_fee_percentage !== null && t.platform_fee_percentage !== undefined)
+            ? (parseFloat(t.platform_fee_percentage) / 100)
+            : defaultCommissionRate;
 
           totalPrizePools += prizeNum;
-          totalAvailableCommission += (entryNum * slots) * commissionRate;
+          totalAvailableCommission += (entryNum * slots) * tRate;
           activeTourneysCount++;
         });
 
         // All-time historical metrics (all statuses including completed/archived)
+        // Historical tournaments preserve their original commission percentage (defaults to 10%)
         const allTimeRes = await pool.query(
-          `SELECT t.prize, t.entry, COALESCE(rc.slots_filled, 0) AS "slotsFilled", t.status FROM tournaments t LEFT JOIN registered_tournament_team_counts rc ON rc.tournament_id = t.id WHERE t.status != 'draft'`
+          `SELECT t.prize, t.entry, COALESCE(rc.slots_filled, 0) AS "slotsFilled", t.status, t.platform_fee_percentage FROM tournaments t LEFT JOIN registered_tournament_team_counts rc ON rc.tournament_id = t.id WHERE t.status != 'draft'`
         );
         let allTimePrizePool = 0;
         let allTimeCommission = 0;
@@ -20693,8 +20765,11 @@ const server = http.createServer(async (req, res) => {
           const prizeNum = parseInt(String(t.prize).replace(/[^0-9]/g, '')) || 0;
           const entryNum = parseInt(String(t.entry).replace(/[^0-9]/g, '')) || 0;
           const slots = parseInt(t.slotsFilled) || 0;
+          const tRate = (t.platform_fee_percentage !== null && t.platform_fee_percentage !== undefined)
+            ? (parseFloat(t.platform_fee_percentage) / 100)
+            : 0.10; // Preserves original historical commission rate
           allTimePrizePool += prizeNum;
-          allTimeCommission += (entryNum * slots) * commissionRate;
+          allTimeCommission += (entryNum * slots) * tRate;
         });
         const totalHostedArenas = allTimeRes.rows.length;
 

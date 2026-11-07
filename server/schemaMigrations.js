@@ -1899,6 +1899,26 @@ export async function runSchemaMigrations(clientOrPool) {
       ON CONFLICT (key) DO NOTHING;
     `);
 
+    // 10. Platform fee dynamic percentage columns and historical backfill
+    await runMigrationBatch(client, `
+      ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS platform_fee_percentage NUMERIC(5, 2) DEFAULT 10;
+      UPDATE tournaments SET platform_fee_percentage = 10 WHERE platform_fee_percentage IS NULL;
+
+      ALTER TABLE payment_submissions ADD COLUMN IF NOT EXISTS platform_fee_percentage NUMERIC(5, 2) DEFAULT 10;
+      ALTER TABLE payment_submissions ADD COLUMN IF NOT EXISTS platform_fee_amount NUMERIC(10, 2) DEFAULT 0;
+      UPDATE payment_submissions 
+      SET platform_fee_percentage = 10, 
+          platform_fee_amount = ROUND((COALESCE(amount, 0) * 10.0 / 100.0), 2) 
+      WHERE platform_fee_percentage IS NULL;
+
+      ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS platform_fee_percentage NUMERIC(5, 2) DEFAULT 10;
+      ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS platform_fee_amount NUMERIC(10, 2) DEFAULT 0;
+      UPDATE wallet_transactions 
+      SET platform_fee_percentage = 10, 
+          platform_fee_amount = ROUND((COALESCE(amount, 0) * 10.0 / 100.0), 2) 
+      WHERE platform_fee_percentage IS NULL;
+    `);
+
   } finally {
     if (isPool) client.release();
   }

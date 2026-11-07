@@ -45,6 +45,8 @@ export default function AdminDashboard({ onNavigate }) {
     trafficBars: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
   })
   const [commissionSaving, setCommissionSaving] = useState(false)
+  const [isCommissionModalOpen, setIsCommissionModalOpen] = useState(false)
+  const [commissionInput, setCommissionInput] = useState('')
   const [themeMode, setThemeMode] = useState('dark')
 
   // UI state for Toast
@@ -315,23 +317,32 @@ export default function AdminDashboard({ onNavigate }) {
 
   // Handle commission percentage save
   const handleSaveCommission = async (newPercentage) => {
+    const val = parseFloat(newPercentage)
+    if (isNaN(val) || val < 0 || val > 100) {
+      triggerToast('Please enter a valid percentage between 0% and 100%')
+      return false
+    }
     setCommissionSaving(true)
     try {
       const token = await getAuthToken()
       const res = await fetch('/api/settings/platform-fee', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ percentage: newPercentage })
+        body: JSON.stringify({ percentage: val })
       })
       const data = await res.json()
       if (data.success) {
         setFinancials(prev => ({ ...prev, platformFeePercentage: data.percentage }))
-        triggerToast(`Commission rate updated to ${data.percentage}%`)
+        triggerToast(`Platform earning percentage updated to ${data.percentage}%`)
+        await fetchFinancials()
+        return true
       } else {
         triggerToast(data.error || 'Failed to update commission rate')
+        return false
       }
     } catch (err) {
       triggerToast('Network error saving commission rate')
+      return false
     } finally {
       setCommissionSaving(false)
     }
@@ -647,10 +658,27 @@ export default function AdminDashboard({ onNavigate }) {
                   </div>
                   <span className="text-xs font-semibold text-slate-500 dark:text-white/50 uppercase tracking-wider">Platform Earnings</span>
                 </div>
-                <span className="px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-xs font-bold">{financials.platformFeePercentage}%</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-xs font-bold">{financials.platformFeePercentage}%</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCommissionInput(String(financials.platformFeePercentage))
+                      setIsCommissionModalOpen(true)
+                    }}
+                    title="Configure Platform Earning Percentage"
+                    aria-label="Configure Platform Earning Percentage"
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 dark:text-white/70 hover:text-primary dark:hover:text-white text-[11px] font-semibold transition-all cursor-pointer border border-slate-200/60 dark:border-white/5"
+                  >
+                    <span className="material-symbols-outlined text-sm">tune</span>
+                    <span className="hidden sm:inline">Configure</span>
+                  </button>
+                </div>
               </div>
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-2xl font-bold text-slate-900 dark:text-white">₹{Math.round(financials.totalPrizePools * (financials.platformFeePercentage / 100)).toLocaleString('en-IN')}</span>
+                <span className="text-2xl font-bold text-slate-900 dark:text-white">
+                  ₹{Math.round(financials.totalOperationalRevenue || (financials.totalPrizePools * (financials.platformFeePercentage / 100))).toLocaleString('en-IN')}
+                </span>
                 <span className="flex items-center px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-500/10 rounded-full gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                   LIVE
@@ -806,6 +834,86 @@ export default function AdminDashboard({ onNavigate }) {
                   >
                     Dark
                   </button>
+                </div>
+              </div>
+
+              {/* Platform Earning Percentage Setting */}
+              <div className="border border-slate-200 dark:border-white/5 rounded-xl p-3.5 space-y-3 bg-slate-100/35 dark:bg-white/[0.01]">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="space-y-0.5">
+                    <h4 className="font-headline-md text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>Platform Earning Percentage</span>
+                    </h4>
+                    <p className="font-body-sm text-[10px] text-slate-600 dark:text-white/40">
+                      Commission collected by platform. Default is 10%.
+                    </p>
+                  </div>
+                  <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-mono shrink-0">
+                    Active: {financials.platformFeePercentage}%
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {/* Presets: 5%, 8%, 10%, 15% */}
+                  <div className="flex items-center gap-1 bg-slate-200/50 dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-lg p-0.5">
+                    {[5, 8, 10, 15].map((preset) => {
+                      const isSelected = Number(commissionInput || financials.platformFeePercentage) === preset
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            setCommissionInput(String(preset))
+                            handleSaveCommission(preset)
+                          }}
+                          disabled={commissionSaving}
+                          className={`px-2.5 py-1 rounded-md font-label-caps text-[9px] font-extrabold transition-all cursor-pointer disabled:opacity-50 ${
+                            isSelected
+                              ? 'bg-primary text-white shadow-sm'
+                              : 'text-slate-600 dark:text-white/50 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          {preset}%
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Custom Input & Apply */}
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <div className="relative w-20">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={commissionInput !== '' ? commissionInput : financials.platformFeePercentage}
+                        onChange={(e) => setCommissionInput(e.target.value)}
+                        placeholder="10"
+                        className="w-full h-8 pl-2 pr-5 rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-surface text-slate-900 dark:text-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary shadow-sm"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">%</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSaveCommission(commissionInput !== '' ? commissionInput : financials.platformFeePercentage)}
+                      disabled={commissionSaving}
+                      className="h-8 px-3 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      {commissionSaving ? (
+                        <>
+                          <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                          <span>...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined text-sm">save</span>
+                          <span>Save</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2065,6 +2173,139 @@ function RegistrationManager({
                 className="px-4 py-2 text-xs font-bold text-slate-700 dark:text-white bg-slate-100 dark:bg-white/10 rounded-lg hover:bg-slate-200 dark:hover:bg-white/20 transition-colors"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Platform Earning Percentage Configure Modal */}
+      {isCommissionModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn"
+          onClick={() => { if (!commissionSaving) setIsCommissionModalOpen(false) }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-outline-variant/30 bg-white dark:bg-[#111827] p-6 shadow-2xl space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/10">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10">
+                  <span className="material-symbols-outlined text-lg">percent</span>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Configure Platform Earning Rate</h3>
+                  <p className="text-[11px] text-slate-500 dark:text-white/40">Adjust commission percentage for future tournaments</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCommissionModalOpen(false)}
+                disabled={commissionSaving}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-white/70 mb-2">
+                  Select Preset Percentage
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[5, 8, 10, 15].map((preset) => {
+                    const isSelected = Number(commissionInput) === preset
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setCommissionInput(String(preset))}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-primary text-white border-primary shadow-sm'
+                            : 'border-slate-200 dark:border-white/10 hover:border-primary/50 text-slate-700 dark:text-white/80 bg-slate-50 dark:bg-white/[0.02]'
+                        }`}
+                      >
+                        {preset}%
+                        {preset === 10 && <span className="block text-[9px] font-normal opacity-80">(Default)</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-white/70 mb-1.5">
+                  Or Enter Custom Percentage (0% – 100%)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={commissionInput}
+                    onChange={(e) => setCommissionInput(e.target.value)}
+                    placeholder="Enter percentage (e.g. 12.5)"
+                    className="w-full h-11 px-3.5 pr-8 rounded-xl border border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-surface text-slate-900 dark:text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
+                  />
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 pointer-events-none">%</span>
+                </div>
+                {Number(commissionInput) < 0 || Number(commissionInput) > 100 ? (
+                  <p className="text-[11px] text-rose-500 mt-1">Percentage must be between 0 and 100%.</p>
+                ) : null}
+              </div>
+
+              {/* Dynamic Revenue Preview */}
+              <div className="p-3.5 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] space-y-1">
+                <div className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
+                  <span>Calculation Preview</span>
+                  <span className="font-mono font-bold">{commissionInput || 0}%</span>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-white/50">
+                  On a ₹10,000 tournament pool, the platform receives{' '}
+                  <strong className="text-slate-900 dark:text-white">
+                    ₹{Math.round(10000 * ((Number(commissionInput) || 0) / 100)).toLocaleString('en-IN')}
+                  </strong>
+                  .
+                </p>
+                <p className="text-[10px] text-slate-500 dark:text-white/40 italic">
+                  Note: Historical tournaments and transactions will preserve their original commission rates.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-white/10">
+              <button
+                type="button"
+                onClick={() => setIsCommissionModalOpen(false)}
+                disabled={commissionSaving}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-white/10 text-xs font-semibold text-slate-600 dark:text-white/70 hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await handleSaveCommission(commissionInput)
+                  if (ok) setIsCommissionModalOpen(false)
+                }}
+                disabled={commissionSaving || commissionInput === '' || Number(commissionInput) < 0 || Number(commissionInput) > 100}
+                className="px-5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold shadow-md transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+              >
+                {commissionSaving ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-sm">save</span>
+                    <span>Save Changes</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
